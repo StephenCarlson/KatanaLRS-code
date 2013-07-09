@@ -262,141 +262,76 @@ void setup(void){
 }
 
 void loop(void){
-	//static uint8_t wdtIntCntDwn = 0;
-	static uint8_t pinToggle = 0;
-	
 	if(stateFlags.intSource == INT_SRC_WDT){
 		stateFlags.intSource = INT_SRC_CLEAR;
 		flashOrangeLED(2,5,5);
-		// if(stateFlags.monitorMode){
-			uint16_t lipoly = getLipolyV();
-			uint16_t sysVin = getInputV();
-			uint16_t atmega = getATmegaV();
-			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",lipoly,sysVin,atmega);
-			// for(uint8_t i=0; i<16; i++){
-				// printf("ADC%u:\t%u\t%u\n",i,readADC(i),readAdcNoiseReduced(i));
-			// }
-			// printf("\n");
-			
-			stateFlags.powerState = (sysVin > 3200)? 1 : 0;
 		
-			printf("RFM: ");
+		uint16_t lipoly = getLipolyV();
+		uint16_t sysVin = getInputV();
+		uint16_t atmega = getATmegaV();
+		stateFlags.powerState = (sysVin > 3200)? 1 : 0;
+		
+		
+		if(stateFlags.monitorMode){
+			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",lipoly,sysVin,atmega);
+			
 			uint8_t regValue = 0;
-			if(pinToggle){
-				pinToggle = 0;
-				printf("TX\n");
-				
-				regValue = (1<<RFM_xton); // (1<<RFM_rxon) | 
-				CS_RFM = LOW;
-					transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
-					transferSPI(regValue); // 0b00000100
-				CS_RFM = HIGH;
-				
-				_delay_ms(1);
-				radioWriteReg(0x08, 0x03);	// FIFO reset
-				radioWriteReg(0x08, 0x00);	// Clear FIFO
-
-				radioWriteReg(0x34, 64);	// preamble = 64nibble
-				radioWriteReg(0x3E, 50);
-				// CS_RFM = LOW;
-					// transferSPI((RFM_WRITE<<7) | 0x7F);
-					// for(uint8_t d=0; d<=50; d++){
-						// uint8_t fillData = ((d&0x80)==0x80)? 0xFF : 0x00;
-						// transferSPI(fillData); // 0b00000100
-					// }
-				// CS_RFM = HIGH;
-				
-				
-				
-				
-				regValue = (1<<RFM_txon) | (1<<RFM_xton);
-				// for(uint16_t l=0; l<3; l++){
-					CS_RFM = LOW;
-						transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
-						transferSPI(regValue); // 0b00000100
-					CS_RFM = HIGH;
-					// _delay_ms(100);
-				// }
-				_delay_ms(2);
-				radioWriteReg(0x6D, 0x07);
-				_delay_ms(2);
-				for(uint16_t d=0; d<=600; d++){
-					//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
-					transferSPI(d&0x01); // 0b00000100
-					_delay_us(1875);
-				}
-				_delay_ms(2);
-				radioWriteReg(0x6D, 0x04);
-				_delay_ms(2);
-				for(uint16_t d=0; d<=800; d++){
-					//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
-					transferSPI(d&0x01); // 0b00000100
-					_delay_us(1295);
-				}
-				_delay_ms(2);
-				radioWriteReg(0x6D, 0x00);
-				_delay_ms(2);
-				for(uint16_t d=0; d<=1000; d++){
-					//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
-					transferSPI(d&0x01); // 0b00000100
-					_delay_us(800);
-				}
-				
-				regValue = 0; // (1<<RFM_xton); // (1<<RFM_rxon) | 
-				CS_RFM = LOW;
-					transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
-					transferSPI(regValue); // 0b00000100
-				CS_RFM = HIGH;
-				
-				
-			} else {
-				pinToggle = 1;
-				printf("STANDBY\n");
-				
-				regValue = 0; // (1<<RFM_xton); // (1<<RFM_rxon) | 
-				CS_RFM = LOW;
-					transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
-					transferSPI(regValue); // 0b00000100
-				CS_RFM = HIGH;
+			
+			regValue = (1<<RFM_xton); // (1<<RFM_rxon) | 
+			CS_RFM = LOW;
+				transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
+				transferSPI(regValue); // 0b00000100
+			CS_RFM = HIGH;
+			
+			_delay_ms(1);
+			// radioWriteReg(0x08, 0x03);	// FIFO reset
+			// radioWriteReg(0x08, 0x00);	// Clear FIFO
+			// radioWriteReg(0x34, 64);	// preamble = 64nibble
+			// radioWriteReg(0x3E, 50);
+			
+			radioWriteReg(0x6D, 0x07);
+			
+			regValue = (1<<RFM_txon) | (1<<RFM_xton);
+			CS_RFM = LOW;
+				transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
+				transferSPI(regValue); // 0b00000100
+			CS_RFM = HIGH;
+			
+			_delay_ms(2);
+			for(uint16_t d=0; d<=600; d++){
+				//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
+				transferSPI(d&0x01); // 0b00000100
+				_delay_us(1875);
+			}
+			_delay_ms(2);
+			radioWriteReg(0x6D, 0x04);
+			_delay_ms(2);
+			for(uint16_t d=0; d<=800; d++){
+				//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
+				transferSPI(d&0x01); // 0b00000100
+				_delay_us(1295);
+			}
+			_delay_ms(2);
+			radioWriteReg(0x6D, 0x00);
+			_delay_ms(2);
+			for(uint16_t d=0; d<=1000; d++){
+				//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
+				transferSPI(d&0x01); // 0b00000100
+				_delay_us(800);
 			}
 			
-			// CS_RFM = LOW;
-				// transferSPI((RFM_READ<<7) | 0x03);
-				// transferSPI(0x00);
-				// transferSPI(0x00);
-			// CS_RFM = HIGH;
-			
-			// CS_RFM = LOW;
-				// transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
-				// transferSPI(regValue); // 0b00000100
-			// CS_RFM = HIGH;
-			
-			// CS_RFM = LOW;
-				// transferSPI((RFM_WRITE<<7) | 0x0E);
-				// transferSPI(pinToggle<<2); // 0b00000100
-			// CS_RFM = HIGH;
-			
-		// } else {
-			// CS_RFM = LOW;
-				// transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
-				// transferSPI(0x00); // 0b00000100
-			// CS_RFM = HIGH;
-		// }
-		
+			radioWriteReg(OPCONTROL1_REG, 0x00);
+		} else {
+			radioWriteReg(OPCONTROL1_REG, 0x00);
+		}
 	}
-	//LED_OR = HIGH;
-	//_delay_us(5);
-	//LED_OR = LOW;
+	
 	if(stateFlags.powerState){
 		OCR1A = getLipolyV();
 	} else{
 		OCR1A = 0;
 		systemSleep(8);
 	}
-	
-	//_delay_ms(10);
-	
-
 }
 
 void printRegisters(void){
@@ -450,7 +385,7 @@ uint8_t systemSleep(uint8_t interval){
 	//uint8_t value = (uint8_t)( ((configFlags.wdtSlpEn)<<WDIE) | (interval & 0x08? (1<<WDP3): 0x00) | (interval & 0x07) );
 	MCUSR = 0;
 	WDTCSR |= (1<<WDCE)|(1<<WDE);
-	WDTCSR = WDTCSR = _BV(WDIE) | _BV(WDP3);
+	WDTCSR = WDTCSR = _BV(WDIE) | _BV(WDP3) | _BV(WDP0);
 	
 	// PCMSK2 = (1<<PCINT16);
 	// PCICR = (1<<PCIE2);
@@ -483,7 +418,7 @@ uint8_t atMegaInit(void){
 	// Was this WDTCSR = _BV(WDIE) | _BV(WDP2) | _BV(WDP1) | _BV(WDE); // Hardwire the WDT for 1 Sec
 	//WDTCSR = _BV(WDE) | _BV(WDP3) | _BV(WDP0);
 	//WDTCSR = 0;
-	WDTCSR = _BV(WDIE) | _BV(WDP3);
+	WDTCSR = _BV(WDIE) | _BV(WDP3) | _BV(WDP0);
 	wdt_reset();
 	
 	// System
@@ -535,16 +470,6 @@ uint8_t atMegaInit(void){
 }
 
 void radioMode(uint8_t mode){
-
-
-
-	// CS_RFM = LOW;
-		// transferSPI((RFM_WRITE<<7) | GPIO_0_CFG);
-		// transferSPI(GPIO_TXST);
-		// transferSPI(GPIO_RXST);
-		// transferSPI(GPIO_RXST);
-	// CS_RFM = HIGH;
-	
 	radioWriteReg(GPIO_0_CFG, GPIO_TXST);
 	radioWriteReg(GPIO_1_CFG, GPIO_RXST);
 	radioWriteReg(GPIO_2_CFG, GPIO_PMBLDET);
@@ -671,14 +596,6 @@ uint16_t getATmegaV(void){
 	
 	voltSample = (1125300)/(voltSample); //(uint32_t)(1100*1023)
 	return ((uint16_t) voltSample);
-	
-	// voltSample = 5353 - ((voltSample<<2)+(voltSample<<1)+(voltSample>>2));
-	
-	// readADC(14);
-	// readADC(14);
-	// readADC(14);
-	// uint16_t voltSample = readAdcNoiseReduced(14);
-	// return voltSample;
 }
 
 char deviceIdCheck(void){
