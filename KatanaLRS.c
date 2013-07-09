@@ -271,7 +271,7 @@ void loop(void){
 		uint16_t atmega = getATmegaV();
 		stateFlags.powerState = (sysVin > 3200)? 1 : 0;
 		
-		
+		stateFlags.monitorMode = 1;
 		if(stateFlags.monitorMode){
 			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",lipoly,sysVin,atmega);
 			
@@ -298,26 +298,26 @@ void loop(void){
 			CS_RFM = HIGH;
 			
 			_delay_ms(2);
-			for(uint16_t d=0; d<=600; d++){
+			for(uint16_t d=0; d<=470; d++){ // 600
 				//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
 				transferSPI(d&0x01); // 0b00000100
-				_delay_us(1875);
+				_delay_us(1910); // 1875
 			}
 			_delay_ms(2);
 			radioWriteReg(0x6D, 0x04);
 			_delay_ms(2);
-			for(uint16_t d=0; d<=800; d++){
+			for(uint16_t d=0; d<=360; d++){ // 800
 				//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
 				transferSPI(d&0x01); // 0b00000100
-				_delay_us(1295);
+				_delay_us(1520); // 1295
 			}
 			_delay_ms(2);
 			radioWriteReg(0x6D, 0x00);
 			_delay_ms(2);
-			for(uint16_t d=0; d<=1000; d++){
+			for(uint16_t d=0; d<=620; d++){ // 1000
 				//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
 				transferSPI(d&0x01); // 0b00000100
-				_delay_us(800);
+				_delay_us(640);
 			}
 			
 			radioWriteReg(OPCONTROL1_REG, 0x00);
