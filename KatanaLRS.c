@@ -27,8 +27,8 @@
 //    11		   9		P6		PD5		PWM/GPIO*		Pin 6 w/OC0B				
 //    12		   10		P7		PD6		PWM/GPIO*		Pin 7 w/OC0A				
 //    13		   11		P8		PD7		PWM/GPIO*		Pin 8						
-//    --		   19		ADC6	ADC6	ADC6			Battery Voltage 50% 		VBAT
-//    --		   22		ADC7	ADC7	ADC7			Input Voltage 50%			VIN
+//    --		   19		ADC6	ADC6	ADC6			Battery Voltage 50% 		ADC_VBAT
+//    --		   22		ADC7	ADC7	ADC7			Input Voltage 50%			ADC_VIN
 //											* = 1k Series Resistor
 //											^ = 4.7k Pull-up Resistor
 
@@ -42,7 +42,7 @@
 // =======================================================================
 
 // Behavioral Switches
-//#define RFM22B
+#define RFM22B
 //#define RFM23BP
 //#define TRANSMITTER
 //#define RECEIVER
@@ -74,10 +74,12 @@
 #define INT_SRC_UART	3
 #define HIGH			1
 #define LOW				0
-#define READ			1 // Common SPI and I2C Direction Flags
-#define WRITE			0
-#define SINGLE			0
-#define MULTI			1
+#define RFM_READ		0 // RFM Direction Flags
+#define RFM_WRITE		1 
+#define I2C_READ		1 // I2C Direction Flags
+#define I2C_WRITE		0
+// #define SINGLE			0
+// #define MULTI			1
 
 
 // Port Definitions and Macros
@@ -98,8 +100,9 @@ typedef struct{
 #define CS_RFM		REGISTER_BIT(PORTB,2)
 #define RFM_INT		(!(PIND &(1<<2)))
 #define RFM_PMBL	(PIND &(1<<3))
-#define VBAT		6 // For ADC Read Channel Selection
-#define VIN			7
+#define ADC_VBAT	6 // For ADC Read Channel Selection
+#define ADC_VIN		7
+#define ADC_VSYS	14
 
 // Included Headers
 #include <stdio.h>
@@ -127,12 +130,13 @@ typedef struct{
 // Function Prototypes
 void setup(void);
 void loop(void);
-void printMonitor(void);
+void printRegisters(void);
 uint8_t systemSleep(uint8_t);
 uint8_t atMegaInit(void);
 void radioMode(uint8_t);
+void radioWriteReg(uint8_t, uint8_t);
 
-uint16_t getSystemV(void);
+uint16_t getInputV(void);
 uint16_t getLipolyV(void);
 uint16_t getATmegaV(void);
 char deviceIdCheck(void);
@@ -141,11 +145,13 @@ void printHelpInfo(void);
 static int putUARTchar(char c, FILE *stream);
 uint8_t getUARTchar(void);
 uint16_t readADC(uint8_t);
-void flashLED(uint8_t, uint8_t, uint8_t);
+uint16_t readAdcNoiseReduced(uint8_t);
+void flashOrangeLED(uint8_t, uint8_t, uint8_t);
+void flashBlueLED(uint8_t, uint8_t, uint8_t);
 
 // Global Variables
 static FILE uart_io = FDEV_SETUP_STREAM(putUARTchar, NULL, _FDEV_SETUP_WRITE);
-static uint8_t dataBufferA[BUFFER_SIZE]; //volatile
+//static uint8_t dataBufferA[BUFFER_SIZE]; //volatile
 static struct{
 	uint8_t sleepInterval:3;
 	uint8_t wdtSlpEn:1;
@@ -154,11 +160,16 @@ static volatile struct{
 	uint8_t systemState:2;
 	uint8_t intSource:2;
 	uint8_t monitorMode:1;
+	uint8_t powerState:1;
 } stateFlags;
 
 // Interrupt Vectors
 ISR(WDT_vect){
 	stateFlags.intSource = INT_SRC_WDT;
+}
+
+ISR(ADC_vect){
+	sleep_disable();
 }
 
 ISR(PCINT2_vect){
@@ -185,19 +196,21 @@ ISR(USART_RX_vect){
 	
 	switch(command){
 		case 'B':
-			printf("Battery: %u\n", getBatt());
+			printf("Battery: %u\n", getLipolyV());
 			break;
 		case 'M':
 			stateFlags.monitorMode = 1;
 			break;
 		case '?':
 			printHelpInfo();
-			printTriggerSources();
+			break;
+		case 'J':
+			printRegisters();
 			break;
 		case '1':
-			configFlags.onOneTap ^= 1;
-			printf("Trigger on 1 Tap: ");
-			if(configFlags.onOneTap) printf("Enabled\n");
+			configFlags.wdtSlpEn ^= 1;
+			printf("Sleep: ");
+			if(configFlags.wdtSlpEn) printf("Enabled\n");
 			else printf("Disabled\n");
 			break;
 		case '`':
@@ -224,15 +237,16 @@ void setup(void){
 	radioMode(ACTIVE);
 	
 	// Tasks and Routines
-	printf("\n\nKatanaLRS v1\nBy Steve Carlson\n\n");
-	printf("Reset Source: "); //%X\n", startStatus);
-	if(startStatus|WDRF) printf("WatchDog\n"); // From iom328p.h in AVR Include Folder
-	if(startStatus|BORF) printf("BrownOut\n");
-	if(startStatus|EXTRF) printf("External\n");
-	if(startStatus|PORF) printf("PowerOn\n\n");
+	printf("\n\nKatanaLRS v1\nBy Steve Carlson May 2013\n\n");
+	printf("Reset Source: "); //%X\n",startStatus); //%X\n", startStatus);
+	if(startStatus&WDRF) printf("WatchDog\t"); // From iom328p.h in AVR Include Folder
+	if(startStatus&BORF) printf("BrownOut\t");
+	if(startStatus&EXTRF) printf("External\t");
+	if(startStatus&PORF) printf("PowerOn\t");
+	printf("\n\n");
 	//	WDRF BORF EXTRF PORF
 	
-	flashLED(10,10,40);
+	flashOrangeLED(10,10,40);
 	
 	printf("Device ID Check: ");
 	if(deviceIdCheck()){
@@ -249,19 +263,164 @@ void setup(void){
 
 void loop(void){
 	//static uint8_t wdtIntCntDwn = 0;
+	static uint8_t pinToggle = 0;
 	
-	LED_OR = HIGH;
-	_delay_us(5);
-	LED_OR = LOW;
-	_delay_ms(1);
+	if(stateFlags.intSource == INT_SRC_WDT){
+		stateFlags.intSource = INT_SRC_CLEAR;
+		flashOrangeLED(2,5,5);
+		// if(stateFlags.monitorMode){
+			uint16_t lipoly = getLipolyV();
+			uint16_t sysVin = getInputV();
+			uint16_t atmega = getATmegaV();
+			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",lipoly,sysVin,atmega);
+			// for(uint8_t i=0; i<16; i++){
+				// printf("ADC%u:\t%u\t%u\n",i,readADC(i),readAdcNoiseReduced(i));
+			// }
+			// printf("\n");
+			
+			stateFlags.powerState = (sysVin > 3200)? 1 : 0;
+		
+			printf("RFM: ");
+			uint8_t regValue = 0;
+			if(pinToggle){
+				pinToggle = 0;
+				printf("TX\n");
+				
+				regValue = (1<<RFM_xton); // (1<<RFM_rxon) | 
+				CS_RFM = LOW;
+					transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
+					transferSPI(regValue); // 0b00000100
+				CS_RFM = HIGH;
+				
+				_delay_ms(1);
+				radioWriteReg(0x08, 0x03);	// FIFO reset
+				radioWriteReg(0x08, 0x00);	// Clear FIFO
+
+				radioWriteReg(0x34, 64);	// preamble = 64nibble
+				radioWriteReg(0x3E, 50);
+				// CS_RFM = LOW;
+					// transferSPI((RFM_WRITE<<7) | 0x7F);
+					// for(uint8_t d=0; d<=50; d++){
+						// uint8_t fillData = ((d&0x80)==0x80)? 0xFF : 0x00;
+						// transferSPI(fillData); // 0b00000100
+					// }
+				// CS_RFM = HIGH;
+				
+				
+				
+				
+				regValue = (1<<RFM_txon) | (1<<RFM_xton);
+				// for(uint16_t l=0; l<3; l++){
+					CS_RFM = LOW;
+						transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
+						transferSPI(regValue); // 0b00000100
+					CS_RFM = HIGH;
+					// _delay_ms(100);
+				// }
+				_delay_ms(2);
+				radioWriteReg(0x6D, 0x07);
+				_delay_ms(2);
+				for(uint16_t d=0; d<=600; d++){
+					//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
+					transferSPI(d&0x01); // 0b00000100
+					_delay_us(1875);
+				}
+				_delay_ms(2);
+				radioWriteReg(0x6D, 0x04);
+				_delay_ms(2);
+				for(uint16_t d=0; d<=800; d++){
+					//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
+					transferSPI(d&0x01); // 0b00000100
+					_delay_us(1295);
+				}
+				_delay_ms(2);
+				radioWriteReg(0x6D, 0x00);
+				_delay_ms(2);
+				for(uint16_t d=0; d<=1000; d++){
+					//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
+					transferSPI(d&0x01); // 0b00000100
+					_delay_us(800);
+				}
+				
+				regValue = 0; // (1<<RFM_xton); // (1<<RFM_rxon) | 
+				CS_RFM = LOW;
+					transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
+					transferSPI(regValue); // 0b00000100
+				CS_RFM = HIGH;
+				
+				
+			} else {
+				pinToggle = 1;
+				printf("STANDBY\n");
+				
+				regValue = 0; // (1<<RFM_xton); // (1<<RFM_rxon) | 
+				CS_RFM = LOW;
+					transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
+					transferSPI(regValue); // 0b00000100
+				CS_RFM = HIGH;
+			}
+			
+			// CS_RFM = LOW;
+				// transferSPI((RFM_READ<<7) | 0x03);
+				// transferSPI(0x00);
+				// transferSPI(0x00);
+			// CS_RFM = HIGH;
+			
+			// CS_RFM = LOW;
+				// transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
+				// transferSPI(regValue); // 0b00000100
+			// CS_RFM = HIGH;
+			
+			// CS_RFM = LOW;
+				// transferSPI((RFM_WRITE<<7) | 0x0E);
+				// transferSPI(pinToggle<<2); // 0b00000100
+			// CS_RFM = HIGH;
+			
+		// } else {
+			// CS_RFM = LOW;
+				// transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
+				// transferSPI(0x00); // 0b00000100
+			// CS_RFM = HIGH;
+		// }
+		
+	}
+	//LED_OR = HIGH;
+	//_delay_us(5);
+	//LED_OR = LOW;
+	if(stateFlags.powerState){
+		OCR1A = getLipolyV();
+	} else{
+		OCR1A = 0;
+		systemSleep(8);
+	}
+	
+	//_delay_ms(10);
+	
 
 }
 
-void printMonitor(void){
+void printRegisters(void){
 	
-	printf("_T\t%u",TCNT1);
-
+	
+	printf("\n\t");
+	for(uint8_t c=0; c<16; c++)	printf("%X\t",c);
 	printf("\n");
+	for(uint8_t j=0; j<8; j++){
+		printf("%X\t",j);
+		CS_RFM = LOW;
+			transferSPI(16*j);
+			for(uint8_t k=0; k<16; k++){
+				uint8_t response = transferSPI(0x00);
+				printf("%X\t",response);
+			}
+		CS_RFM = HIGH;
+		printf("\n");
+	}
+	//printf("\n");
+	
+	//printf("_T\t%u",TCNT1);
+
+
 }
 
 uint8_t systemSleep(uint8_t interval){
@@ -287,17 +446,17 @@ uint8_t systemSleep(uint8_t interval){
 	//MPU_VLOGIC = LOW;
 	power_all_disable();
 	
-	wdt_reset();
+	//wdt_reset();
 	//uint8_t value = (uint8_t)( ((configFlags.wdtSlpEn)<<WDIE) | (interval & 0x08? (1<<WDP3): 0x00) | (interval & 0x07) );
 	MCUSR = 0;
 	WDTCSR |= (1<<WDCE)|(1<<WDE);
-	WDTCSR = 0; //value;
+	WDTCSR = WDTCSR = _BV(WDIE) | _BV(WDP3);
 	
-	PCMSK2 = (1<<PCINT16);
-	PCICR = (1<<PCIE2);
+	// PCMSK2 = (1<<PCINT16);
+	// PCICR = (1<<PCIE2);
 
-	EICRA = 0;
-	EIMSK = (1<<INT1); //|(1<<INT0);
+	// EICRA = 0;
+	// EIMSK = (1<<INT1); //|(1<<INT0);
 	
 	
 	// if(stateFlags.systemState == DOWN)			set_sleep_mode(SLEEP_MODE_PWR_DOWN);
@@ -310,7 +469,6 @@ uint8_t systemSleep(uint8_t interval){
 	sleep_cpu();
 	
 	sleep_disable();
-	wdt_reset();
 	uint8_t systemReturnState = atMegaInit();
 	
 	//LED = HIGH;
@@ -324,7 +482,8 @@ uint8_t atMegaInit(void){
 	WDTCSR |= _BV(WDCE) | _BV(WDE); // Three Options Below:
 	// Was this WDTCSR = _BV(WDIE) | _BV(WDP2) | _BV(WDP1) | _BV(WDE); // Hardwire the WDT for 1 Sec
 	//WDTCSR = _BV(WDE) | _BV(WDP3) | _BV(WDP0);
-	WDTCSR = 0;
+	//WDTCSR = 0;
+	WDTCSR = _BV(WDIE) | _BV(WDP3);
 	wdt_reset();
 	
 	// System
@@ -333,16 +492,17 @@ uint8_t atMegaInit(void){
 	PRR = 0;
 
 	// Timers
-	TCCR1A = 0;
+	TCCR1A = _BV(COM1A1)|_BV(WGM11)|_BV(WGM13);
 	TCCR1B = (1<<CS12); //(1<<CS11)|(1<<CS10); //
+	ICR1 = 0xFFFF;
 	
 	// IO Ports
 	// 0: Input (Hi-Z) 1: Output
 	//        76543210		7		6		5		4		3		2		1		0
 	DDRB |= 0b00101111; //	XTAL2	XTAL1	SCK		MISO	MOSI	CS_RFM	LED_BL	LED_OR
-    DDRC |= 0b00000000; //	--		Reset	SCL		SDA		P4		P3		P2		P1
+    DDRC |= 0b00001111; //	--		Reset	SCL		SDA		P4		P3		P2		P1
     DDRD |= 0b00000010; //	P8		P7		P6		P5		RFM_PBL	RF_INT	TXD		RXD
-	//PORTB |=0b00111111;
+	// PORTC |=0b00000000;
 	
 	// Serial Port
 	UBRR0H = UART_UBRR >> 8;
@@ -351,7 +511,7 @@ uint8_t atMegaInit(void){
     stdout = &uart_io; //= stdin 
 	
 	//SPI
-	SPCR	= (1<<SPE)|(1<<MSTR)|(1<<CPOL)|(1<<CPHA)|(1<<SPR0);
+	SPCR	= (1<<SPE)|(1<<MSTR)|(1<<SPR0); // |(1<<CPOL)|(1<<CPHA)
 	
 	//I2C
 	TWCR = (1<<TWEN) | (1<<TWEA);
@@ -359,8 +519,8 @@ uint8_t atMegaInit(void){
 	TWBR = ((F_CPU / I2C_FREQ) - 16) / 2;
 	
 	// ADC
-	ADMUX 	= (1<<REFS0);	// AVcc Connected
-	ADCSRA 	= (1<<ADEN)|(1<<ADPS2)|(1<<ADPS1);
+	ADMUX 	= 0; //(1<<REFS0);	// AVcc Connected
+	ADCSRA 	= (1<<ADEN)|(1<<ADPS2)|(1<<ADPS1)|(1<<ADPS0)|(1<<ADIE);
 	DIDR0 	= (1<<ADC5D)|(1<<ADC4D)|(1<<ADC3D)|(1<<ADC2D)|(1<<ADC1D)|(1<<ADC0D);
 
 	//PCICR = 0; //(1<<PCIE2);
@@ -375,13 +535,120 @@ uint8_t atMegaInit(void){
 }
 
 void radioMode(uint8_t mode){
+
+
+
+	// CS_RFM = LOW;
+		// transferSPI((RFM_WRITE<<7) | GPIO_0_CFG);
+		// transferSPI(GPIO_TXST);
+		// transferSPI(GPIO_RXST);
+		// transferSPI(GPIO_RXST);
+	// CS_RFM = HIGH;
+	
+	radioWriteReg(GPIO_0_CFG, GPIO_TXST);
+	radioWriteReg(GPIO_1_CFG, GPIO_RXST);
+	radioWriteReg(GPIO_2_CFG, GPIO_PMBLDET);
+	
+	radioWriteReg(0x06, 0x00);		// Disable all interrupts
+	radioWriteReg(0x07, 0x01);		// Set READY mode
+	radioWriteReg(0x09, 0x7F);		// Cap = 12.5pF
+	radioWriteReg(0x0A, 0x05);		// Clk output is 2MHz
+
+	radioWriteReg(0x0F, 0x70);		// NO ADC used
+	radioWriteReg(0x10, 0x00);		// no ADC used
+	radioWriteReg(0x12, 0x00);		// No temp sensor used
+	radioWriteReg(0x13, 0x00);		// no temp sensor used
+
+	radioWriteReg(0x70, 0x20);		// No manchester code, no data whiting, data rate < 30Kbps
+
+	radioWriteReg(0x1C, 0x1D);		// IF filter bandwidth
+	radioWriteReg(0x1D, 0x40);		// AFC Loop
+	//radioWriteReg(0x1E, 0x0A);	// AFC timing
+
+	radioWriteReg(0x20, 0xA1);		// clock recovery
+	radioWriteReg(0x21, 0x20);		// clock recovery
+	radioWriteReg(0x22, 0x4E);		// clock recovery
+	radioWriteReg(0x23, 0xA5);		// clock recovery
+	radioWriteReg(0x24, 0x00);		// clock recovery timing
+	radioWriteReg(0x25, 0x0A);		// clock recovery timing
+
+	//radioWriteReg(0x2A, 0x18);
+	radioWriteReg(0x2C, 0x00);
+	radioWriteReg(0x2D, 0x00);
+	radioWriteReg(0x2E, 0x00);
+
+	radioWriteReg(0x6E, 0x27);		// TX data rate 1
+	radioWriteReg(0x6F, 0x52);		// TX data rate 0
+
+	radioWriteReg(0x30, 0x00);		// Data access control <steve> 0x8C
+
+	radioWriteReg(0x32, 0xFF);		// Header control
+
+	radioWriteReg(0x33, 0x42);		// Header 3, 2, 1, 0 used for head length, fixed packet length, synchronize word length 3, 2,
+
+	radioWriteReg(0x34, 64);		// 64 nibble = 32 byte preamble
+	radioWriteReg(0x35, 0x20);		// 0x35 need to detect 20bit preamble
+	radioWriteReg(0x36, 0x2D);		// synchronize word
+	radioWriteReg(0x37, 0xD4);
+	radioWriteReg(0x38, 0x00);
+	radioWriteReg(0x39, 0x00);
+	radioWriteReg(0x3A, '*');		// set tx header 3
+	radioWriteReg(0x3B, 'E');		// set tx header 2
+	radioWriteReg(0x3C, 'W');		// set tx header 1
+	radioWriteReg(0x3D, 'S');		// set tx header 0
+	//radioWriteReg(0x3E, 17);		// set packet length to 17 bytes (max size: 255 bytes)
+	radioWriteReg(0x3E, 50);	// set packet length to PKTSIZE bytes (max size: 255 bytes)
+
+	radioWriteReg(0x3F, '*');		// set rx header
+	radioWriteReg(0x40, 'E');
+	radioWriteReg(0x41, 'W');
+	radioWriteReg(0x42, 'S');
+	radioWriteReg(0x43, 0xFF);		// check all bits
+	radioWriteReg(0x44, 0xFF);		// Check all bits
+	radioWriteReg(0x45, 0xFF);		// check all bits
+	radioWriteReg(0x46, 0xFF);		// Check all bits
+
+	radioWriteReg(0x56, 0x02);		// <steve> Something to do with I/Q Swapping
+
+	radioWriteReg(0x6D, 0x00);		// Tx power to max
+
+	radioWriteReg(0x79, 0x00);		// no frequency hopping
+	radioWriteReg(0x7A, 0x00);		// no frequency hopping
+
+	radioWriteReg(0x71, 0x12);		// GFSK, fd[8]=0, no invert for TX/RX data, FIFO mode, txclk-->gpio
+
+	radioWriteReg(0x72, 0x48);		// Frequency deviation setting to 45K=72*625
+
+	radioWriteReg(0x73, 0x00);		// No frequency offset
+	radioWriteReg(0x74, 0x00);		// No frequency offset
+
+	radioWriteReg(0x75, 0x53);		// frequency set to 434MHz
+	radioWriteReg(0x76, 0x64);		// frequency set to 434MHz
+	radioWriteReg(0x77, 0x00);		// frequency set to 434Mhz
+
+	radioWriteReg(0x5A, 0x7F);
+	radioWriteReg(0x59, 0x40);
+	radioWriteReg(0x58, 0x80);
+
+	radioWriteReg(0x6A, 0x0B);
+	radioWriteReg(0x68, 0x04);
+	radioWriteReg(0x1F, 0x03);
+	
+	
 	#if defined(RFM22B)
 
 	#endif
 }
 
-uint16_t getSystemV(void){
-	uint16_t voltSample = readADC(VIN);
+void radioWriteReg(uint8_t regAddress, uint8_t regValue){
+	CS_RFM = LOW;
+		transferSPI((RFM_WRITE<<7) | regAddress);
+		transferSPI(regValue);
+	CS_RFM = HIGH;
+}
+
+uint16_t getInputV(void){
+	uint16_t voltSample = readADC(ADC_VIN);
 	// 3.300 System Voltage, 50% divider
 	// (sample / 1023) * 2 * 3.3v
 	voltSample = ((voltSample<<2)+(voltSample<<1)+(voltSample>>1));
@@ -389,21 +656,47 @@ uint16_t getSystemV(void){
 }
 
 uint16_t getLipolyV(void){
-	uint16_t voltSample = readADC(VBAT);
+	uint16_t voltSample = readADC(ADC_VBAT);
 	voltSample = ((voltSample<<2)+(voltSample<<1)+(voltSample>>1));
 	return voltSample;
 }
 
 uint16_t getATmegaV(void){
-	uint16_t voltSample = readADC(14);
-	//voltSample = 1100*1023/voltSample;
-	voltSample = 5353 - ((voltSample<<2)+(voltSample<<1)+(voltSample>>2));
-	return voltSample;
+	for(uint8_t i=0; i<4; i++) readADC(ADC_VSYS);
+	uint32_t voltSample = readAdcNoiseReduced(ADC_VSYS);
+	for(uint8_t j=0; j<4; j++){
+		voltSample += readAdcNoiseReduced(ADC_VSYS);
+		voltSample >>=1;
+	}
+	
+	voltSample = (1125300)/(voltSample); //(uint32_t)(1100*1023)
+	return ((uint16_t) voltSample);
+	
+	// voltSample = 5353 - ((voltSample<<2)+(voltSample<<1)+(voltSample>>2));
+	
+	// readADC(14);
+	// readADC(14);
+	// readADC(14);
+	// uint16_t voltSample = readAdcNoiseReduced(14);
+	// return voltSample;
 }
 
 char deviceIdCheck(void){
-	return 1;
-	//return 0;
+	// printRegisters();
+	CS_RFM = LOW;
+		transferSPI(0x00);
+		uint8_t rfmDevType = transferSPI(0x00);
+		uint8_t rfmVerCode = transferSPI(0x00);
+	CS_RFM = HIGH;
+	
+	printf("\n%X\t%X\n",rfmDevType,rfmVerCode);
+	
+	
+	rfmDevType ^= 0b00001000;
+	rfmVerCode ^= 0b00000110;
+	
+	if(rfmDevType==0 && rfmVerCode==0) return (1);
+	return 0;
 }
 
 void printHelpInfo(void){
@@ -430,17 +723,39 @@ uint8_t getUARTchar(void){
 }
 
 uint16_t readADC(uint8_t adcChannel){
-	ADMUX 	= (1<<REFS0) | adcChannel;
+	ADMUX 	= adcChannel; //(1<<REFS0) |
 	ADCSRA 	|= (1<<ADSC);
 	while (ADCSRA & (1 << ADSC));
 	return (ADCL + ((uint16_t) ADCH << 8));
 }
 
-void flashLED(uint8_t count, uint8_t high, uint8_t low){
+uint16_t readAdcNoiseReduced(uint8_t adcChannel){
+	ADMUX 	= adcChannel; //(1<<REFS0) |
+	
+	set_sleep_mode(SLEEP_MODE_ADC);
+	sleep_enable();
+	sleep_bod_disable();
+	sei();
+	sleep_cpu();
+	
+	sleep_disable();
+	return (ADCL + ((uint16_t) ADCH << 8));
+}
+
+void flashOrangeLED(uint8_t count, uint8_t high, uint8_t low){
 	for(;count>0; count--){
-		LED = HIGH;
+		LED_OR = HIGH;
 		_delay_ms(high);
-		LED = LOW;
+		LED_OR = LOW;
+		_delay_ms(low);
+	}
+}
+
+void flashBlueLED(uint8_t count, uint8_t high, uint8_t low){
+	for(;count>0; count--){
+		LED_BL = HIGH;
+		_delay_ms(high);
+		LED_BL = LOW;
 		_delay_ms(low);
 	}
 }
