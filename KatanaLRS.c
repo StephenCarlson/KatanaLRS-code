@@ -161,6 +161,7 @@ static volatile struct{
 	uint8_t intSource:2;
 	uint8_t monitorMode:1;
 	uint8_t powerState:1;
+	uint8_t batteryState:1;
 } stateFlags;
 
 // Interrupt Vectors
@@ -264,15 +265,16 @@ void setup(void){
 void loop(void){
 	if(stateFlags.intSource == INT_SRC_WDT){
 		stateFlags.intSource = INT_SRC_CLEAR;
-		flashOrangeLED(2,5,5);
 		
 		uint16_t lipoly = getLipolyV();
 		uint16_t sysVin = getInputV();
 		uint16_t atmega = getATmegaV();
-		stateFlags.powerState = (sysVin > 3200)? 1 : 0;
+		stateFlags.powerState = (sysVin > 3800)? 1 : 0;
+		stateFlags.batteryState = (lipoly > 3500)? 1 : 0;
 		
 		stateFlags.monitorMode = 1;
-		if(stateFlags.monitorMode){
+		if(stateFlags.monitorMode==1 && stateFlags.batteryState==1){
+			flashOrangeLED(2,5,5);
 			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",lipoly,sysVin,atmega);
 			
 			uint8_t regValue = 0;
@@ -324,6 +326,11 @@ void loop(void){
 		} else {
 			radioWriteReg(OPCONTROL1_REG, 0x00);
 		}
+		
+		uint8_t tempReg = WDTCSR;
+		tempReg |= _BV(WDIE);
+		WDTCSR |= (1<<WDCE)|(1<<WDE);
+		WDTCSR = tempReg;
 	}
 	
 	if(stateFlags.powerState){
@@ -385,7 +392,7 @@ uint8_t systemSleep(uint8_t interval){
 	//uint8_t value = (uint8_t)( ((configFlags.wdtSlpEn)<<WDIE) | (interval & 0x08? (1<<WDP3): 0x00) | (interval & 0x07) );
 	MCUSR = 0;
 	WDTCSR |= (1<<WDCE)|(1<<WDE);
-	WDTCSR = WDTCSR = _BV(WDIE) | _BV(WDP3) | _BV(WDP0);
+	WDTCSR = _BV(WDIE) | _BV(WDE) | _BV(WDP3) | _BV(WDP0);
 	
 	// PCMSK2 = (1<<PCINT16);
 	// PCICR = (1<<PCIE2);
@@ -418,7 +425,7 @@ uint8_t atMegaInit(void){
 	// Was this WDTCSR = _BV(WDIE) | _BV(WDP2) | _BV(WDP1) | _BV(WDE); // Hardwire the WDT for 1 Sec
 	//WDTCSR = _BV(WDE) | _BV(WDP3) | _BV(WDP0);
 	//WDTCSR = 0;
-	WDTCSR = _BV(WDIE) | _BV(WDP3) | _BV(WDP0);
+	WDTCSR = _BV(WDIE) | _BV(WDE) | _BV(WDP3) | _BV(WDP0);
 	wdt_reset();
 	
 	// System
