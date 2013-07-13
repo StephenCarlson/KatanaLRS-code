@@ -135,10 +135,8 @@ uint8_t systemSleep(uint8_t);
 uint8_t atMegaInit(void);
 void radioMode(uint8_t);
 void radioWriteReg(uint8_t, uint8_t);
+void updateVolts(void);
 
-uint16_t getInputV(void);
-uint16_t getLipolyV(void);
-uint16_t getATmegaV(void);
 char deviceIdCheck(void);
 void printHelpInfo(void);
 
@@ -163,6 +161,11 @@ static volatile struct{
 	uint8_t powerState:1;
 	uint8_t batteryState:1;
 } stateFlags;
+static struct{
+	uint16_t lipoly;
+	uint16_t sysVin;
+	uint16_t atMega;
+} volt;
 
 // Interrupt Vectors
 ISR(WDT_vect){
@@ -197,7 +200,7 @@ ISR(USART_RX_vect){
 	
 	switch(command){
 		case 'B':
-			printf("Battery: %u\n", getLipolyV());
+			printf("Battery: %u\n", volt.atMega);
 			break;
 		case 'M':
 			stateFlags.monitorMode = 1;
@@ -266,16 +269,12 @@ void loop(void){
 	if(stateFlags.intSource == INT_SRC_WDT){
 		stateFlags.intSource = INT_SRC_CLEAR;
 		
-		uint16_t lipoly = getLipolyV();
-		uint16_t sysVin = getInputV();
-		uint16_t atmega = getATmegaV();
-		stateFlags.powerState = (sysVin > 3800)? 1 : 0;
-		stateFlags.batteryState = (lipoly > 3500)? 1 : 0;
+		updateVolts();
 		
 		stateFlags.monitorMode = 1;
 		if(stateFlags.monitorMode==1 && stateFlags.batteryState==1){
 			flashOrangeLED(2,5,5);
-			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",lipoly,sysVin,atmega);
+			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",volt.lipoly,volt.sysVin,volt.atMega);
 			
 			uint8_t regValue = 0;
 			
@@ -334,7 +333,7 @@ void loop(void){
 	}
 	
 	if(stateFlags.powerState){
-		OCR1A = getLipolyV();
+		OCR1A = volt.lipoly;
 	} else{
 		OCR1A = 0;
 		systemSleep(8);
@@ -579,30 +578,58 @@ void radioWriteReg(uint8_t regAddress, uint8_t regValue){
 	CS_RFM = HIGH;
 }
 
-uint16_t getInputV(void){
-	uint16_t voltSample = readADC(ADC_VIN);
+void updateVolts(void){
+	uint16_t lipoly = 0; // An array or struct would be more condusive?
+	uint16_t sysVin = 0;
+	uint16_t atMegaVolt = 0;
+	
+	
+	for(uint8_t j=0; j<4; j++){
+		lipoly += readADC(ADC_VBAT);
+		sysVin += readADC(ADC_VIN);
+		for(uint8_t i=0; i<4; i++) readADC(ADC_VSYS);
+		atMegaVolt += readAdcNoiseReduced(ADC_VSYS); // [4092:0]
+	}
+	lipoly >>= 2; // [1023:0]
+	sysVin >>= 2;
+	atMegaVolt >>= 2;
+	
+	// printf("Raw: %u\t%u\t%u\n",lipoly,sysVin,atMegaVolt);
+	
 	// 3.300 System Voltage, 50% divider
 	// (sample / 1023) * 2 * 3.3v
-	voltSample = ((voltSample<<2)+(voltSample<<1)+(voltSample>>1));
-	return voltSample;
-}
-
-uint16_t getLipolyV(void){
-	uint16_t voltSample = readADC(ADC_VBAT);
-	voltSample = ((voltSample<<2)+(voltSample<<1)+(voltSample>>1));
-	return voltSample;
-}
-
-uint16_t getATmegaV(void){
-	for(uint8_t i=0; i<4; i++) readADC(ADC_VSYS);
-	uint32_t voltSample = readAdcNoiseReduced(ADC_VSYS);
-	for(uint8_t j=0; j<4; j++){
-		voltSample += readAdcNoiseReduced(ADC_VSYS);
-		voltSample >>=1;
-	}
+	// value = sample * 2 * atMegaVolt / 1023
+	// voltSample = ((voltSample<<2)+(voltSample<<1)+(voltSample>>1));
 	
-	voltSample = (1125300)/(voltSample); //(uint32_t)(1100*1023)
-	return ((uint16_t) voltSample);
+	
+	// atMegaVolt = (atMegaVolt < 225)? 4999 : (uint16_t)( (1125300)/((uint32_t) atMegaVolt) ); // 1125300 from (1100*1023)
+	
+	// sysVin = (sysVin * atMegaVolt * 2 )/ 1023;
+	// sysVin = (uint16_t)( (uint32_t)( ((uint32_t)sysVin) * ((uint32_t)atMegaVolt) ) >> 9 );
+	
+	// atMegaADC = 1023 * 1.1v / ATMEGAv, battADC = 1023 * BATTv * .5 / ATMEGAv
+	// ATMEGAv = 1023 * 1.1v / atMegaADC, BATTv = battADC * ATMEGAv * 2 / 1023
+	// BATTv = battADC * 1.1v * 2 / atMegaADC
+	// lipoly = lipoly (which is [1023:0]) * 1100 * 2 / atMegaVolt , Max is 2.2 Mil, non-determinined divide eats time bad
+	// Repeated for sysVin
+	// Is this next version more lossy? :
+	// BATTv = battADC[1023:0] * ATMEGAv[4999:0] * 2 /1023 (appprox as >> 9) , Max is 5.1 Mil, divide is an easy right shift to within .1% actual
+	// Both version require 32-bit ints, so might as well do the one with only one divide and 3 multiplies. First was 3 mult + 3 div
+	
+	atMegaVolt = (atMegaVolt < 225)? 4999 : (uint16_t)( (1125300)/((uint32_t) atMegaVolt) );
+	sysVin = (uint16_t)( (uint32_t)( (uint32_t)sysVin * (uint32_t)atMegaVolt ) >> 9 );
+	lipoly = (uint16_t)( (uint32_t)( (uint32_t)lipoly * (uint32_t)atMegaVolt ) >> 9 );
+	
+	stateFlags.powerState = (sysVin > 3800)? 1 : 0;
+	stateFlags.batteryState = (lipoly > 3400)? 1 : 0;
+	
+	// printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",lipoly,sysVin,atMegaVolt);
+	
+	volt.lipoly = lipoly;
+	volt.sysVin = sysVin;
+	volt.atMega = atMegaVolt;
+	
+	//return ((uint16_t) voltSample);
 }
 
 char deviceIdCheck(void){
