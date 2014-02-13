@@ -42,11 +42,17 @@
 // =======================================================================
 
 // Behavioral Switches
-#define RFM22B
-//#define RFM23BP
-//#define TRANSMITTER
+#define TRANSMITTER
 //#define RECEIVER
-//#define BATTERY
+
+#ifdef TRANSMITTER
+#define RFM23BP
+
+#elif defined(RECEIVER)
+#define RFM22B
+#define BATTERY
+#endif
+
 
 // Debug Switches
 //#define DEBUG_MAIN_LOOP
@@ -62,6 +68,8 @@
 #define LOOP_PERIOD		2500	// (16000000 Hz / 64) / 100 Hz
 #define BUFFER_SIZE 	128
 #define EEPROM_START	10
+#define LIPOLY_CUTOFF	3400
+#define VIN_CUTOFF		3800
 
 // System Constants
 #define DOWN 			0 // Only Wake on Interrupts
@@ -72,6 +80,7 @@
 #define INT_SRC_INTx	1
 #define INT_SRC_WDT		2
 #define INT_SRC_UART	3
+#define INT_SRC_TIMER	4
 #define HIGH			1
 #define LOW				0
 #define RFM_READ		0 // RFM Direction Flags
@@ -156,7 +165,7 @@ static struct{
 } configFlags;
 static volatile struct{
 	uint8_t systemState:2;
-	uint8_t intSource:2;
+	uint8_t intSource:3;
 	uint8_t monitorMode:1;
 	uint8_t powerState:1;
 	uint8_t batteryState:1;
@@ -167,21 +176,7 @@ static struct{
 	uint16_t atMega;
 } volt;
 
-// Interrupt Vectors
-ISR(WDT_vect){
-	stateFlags.intSource = INT_SRC_WDT;
-}
-
-ISR(ADC_vect){
-	sleep_disable();
-}
-
-ISR(PCINT2_vect){
-	stateFlags.intSource = INT_SRC_UART;
-	PCICR = 0;
-	PCMSK2 = 0;
-}
-
+// Interrupt Vectors (Listed in Priority Order)
 ISR(INT0_vect){
 	stateFlags.intSource = INT_SRC_INTx;
 	EIMSK = 0;
@@ -190,6 +185,26 @@ ISR(INT0_vect){
 ISR(INT1_vect){
 	stateFlags.intSource = INT_SRC_INTx;
 	EIMSK = 0;
+}
+
+ISR(PCINT2_vect){
+	stateFlags.intSource = INT_SRC_UART;
+	PCICR = 0;
+	PCMSK2 = 0;
+}
+
+ISR(WDT_vect){
+	stateFlags.intSource = INT_SRC_WDT;
+}
+
+ISR(TIMER1_COMPA_vect){
+	stateFlags.intSource = INT_SRC_TIMER;
+}
+
+ISR(TIMER1_COMPB_vect){
+}
+
+ISR(TIMER0_OVF_vect){
 }
 
 ISR(USART_RX_vect){
@@ -224,6 +239,11 @@ ISR(USART_RX_vect){
 			break;
 	}	
 }
+
+ISR(ADC_vect){
+	sleep_disable();
+}
+
 
 // Main Program
 int main(void){
@@ -272,6 +292,13 @@ void loop(void){
 		updateVolts();
 		
 		stateFlags.monitorMode = 1;
+		#ifdef TRANSMITTER
+		if(stateFlags.monitorMode==1){
+			flashOrangeLED(2,5,5);
+			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",volt.lipoly,volt.sysVin,volt.atMega);
+		}
+		#endif // TRANSMITTER
+		#ifdef RFM22B
 		if(stateFlags.monitorMode==1 && stateFlags.batteryState==1){
 			flashOrangeLED(2,5,5);
 			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",volt.lipoly,volt.sysVin,volt.atMega);
@@ -325,19 +352,24 @@ void loop(void){
 		} else {
 			radioWriteReg(OPCONTROL1_REG, 0x00);
 		}
+		#endif // RFM22B
 		
 		uint8_t tempReg = WDTCSR;
 		tempReg |= _BV(WDIE);
 		WDTCSR |= (1<<WDCE)|(1<<WDE);
 		WDTCSR = tempReg;
 	}
+	if(stateFlags.intSource == INT_SRC_TIMER){
+	}
 	
+	#ifdef RECEIVER
 	if(stateFlags.powerState){
 		OCR1A = volt.lipoly;
 	} else{
 		OCR1A = 0;
 		systemSleep(8);
 	}
+	#endif // RECEIVER
 }
 
 void printRegisters(void){
@@ -620,8 +652,8 @@ void updateVolts(void){
 	sysVin = (uint16_t)( (uint32_t)( (uint32_t)sysVin * (uint32_t)atMegaVolt ) >> 9 );
 	lipoly = (uint16_t)( (uint32_t)( (uint32_t)lipoly * (uint32_t)atMegaVolt ) >> 9 );
 	
-	stateFlags.powerState = (sysVin > 3800)? 1 : 0;
-	stateFlags.batteryState = (lipoly > 3400)? 1 : 0;
+	stateFlags.powerState = (sysVin > VIN_CUTOFF)? 1 : 0;
+	stateFlags.batteryState = (lipoly > LIPOLY_CUTOFF)? 1 : 0;
 	
 	// printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",lipoly,sysVin,atMegaVolt);
 	
