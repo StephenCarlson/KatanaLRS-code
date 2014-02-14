@@ -42,8 +42,8 @@
 // =======================================================================
 
 // Behavioral Switches
-#define TRANSMITTER
-//#define RECEIVER
+// #define TRANSMITTER
+#define RECEIVER
 
 #ifdef TRANSMITTER
 #define RFM23BP
@@ -107,6 +107,7 @@ typedef struct{
 #define LED_OR		REGISTER_BIT(PORTB,0)
 #define LED_BL		REGISTER_BIT(PORTB,1)
 #define CS_RFM		REGISTER_BIT(PORTB,2)
+#define FORCE_MOSI	REGISTER_BIT(PORTB,3)
 #define RFM_INT		(!(PIND &(1<<2)))
 #define RFM_PMBL	(PIND &(1<<3))
 #define ADC_VBAT	6 // For ADC Read Channel Selection
@@ -144,6 +145,9 @@ uint8_t systemSleep(uint8_t);
 uint8_t atMegaInit(void);
 void radioMode(uint8_t);
 void radioWriteReg(uint8_t, uint8_t);
+uint8_t radioReadReg(uint8_t);
+void transmitELT_Beacon(void);
+void transmitELT_Packet(void); //uint8_t *,uint8_t);
 void updateVolts(void);
 
 char deviceIdCheck(void);
@@ -159,6 +163,17 @@ void flashBlueLED(uint8_t, uint8_t, uint8_t);
 // Global Variables
 static FILE uart_io = FDEV_SETUP_STREAM(putUARTchar, NULL, _FDEV_SETUP_WRITE);
 //static uint8_t dataBufferA[BUFFER_SIZE]; //volatile
+
+#define BEACON_NOTES 6
+static uint16_t beaconNotes[BEACON_NOTES][3] = {{1136,704,7},{902,222,4},{758,264,3},{851,235,2},{675,296,1},{568,352,0}};
+//	Note	A4		C#5 	E5 		D5 		F#5 	A5
+//	Freq	440		554.4	659.3	587.3	740		880
+//	uS		2273	1804	1517	1703	1351    1136
+//	Halve these values to actually get the note, as the for loop times the half-wave gaps, not peak-peak wave shape
+//	uS/2	1136	902		758		851		675		568
+//	Times	0.8		0.2		0.2		0.2		0.2		0.2
+//	TxPwr	7		4		3		2		1		0
+
 static struct{
 	uint8_t sleepInterval:3;
 	uint8_t wdtSlpEn:1;
@@ -258,6 +273,15 @@ void setup(void){
 	uint8_t startStatus = atMegaInit();
 	stateFlags.systemState = ACTIVE;
 	
+	for(uint8_t i=0; i<5; i++){
+		radioWriteReg(0x07, 0x80);		// Reset the Chip
+		_delay_ms(1);
+	}
+	for(uint8_t i=0; i<0xFF; i++){
+		if((radioReadReg(0x05)&0x02) == 0x02) break;
+		_delay_ms(1);
+	}
+	
 	radioMode(ACTIVE);
 	
 	// Tasks and Routines
@@ -303,50 +327,17 @@ void loop(void){
 			flashOrangeLED(2,5,5);
 			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",volt.lipoly,volt.sysVin,volt.atMega);
 			
-			uint8_t regValue = 0;
-			
-			regValue = (1<<RFM_xton); // (1<<RFM_rxon) | 
-			CS_RFM = LOW;
-				transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
-				transferSPI(regValue); // 0b00000100
-			CS_RFM = HIGH;
-			
+
+			radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
 			_delay_ms(1);
-			// radioWriteReg(0x08, 0x03);	// FIFO reset
-			// radioWriteReg(0x08, 0x00);	// Clear FIFO
-			// radioWriteReg(0x34, 64);	// preamble = 64nibble
-			// radioWriteReg(0x3E, 50);
+			// radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon) | (1<<RFM_xton));
+			// _delay_ms(10);
 			
-			radioWriteReg(0x6D, 0x07);
+			transmitELT_Packet();
+			_delay_ms(1);
+			transmitELT_Beacon();
+			_delay_ms(1);
 			
-			regValue = (1<<RFM_txon) | (1<<RFM_xton);
-			CS_RFM = LOW;
-				transferSPI((RFM_WRITE<<7) | OPCONTROL1_REG);
-				transferSPI(regValue); // 0b00000100
-			CS_RFM = HIGH;
-			
-			_delay_ms(2);
-			for(uint16_t d=0; d<=470; d++){ // 600
-				//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
-				transferSPI(d&0x01); // 0b00000100
-				_delay_us(1910); // 1875
-			}
-			_delay_ms(2);
-			radioWriteReg(0x6D, 0x04);
-			_delay_ms(2);
-			for(uint16_t d=0; d<=360; d++){ // 800
-				//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
-				transferSPI(d&0x01); // 0b00000100
-				_delay_us(1520); // 1295
-			}
-			_delay_ms(2);
-			radioWriteReg(0x6D, 0x00);
-			_delay_ms(2);
-			for(uint16_t d=0; d<=620; d++){ // 1000
-				//uint8_t fillData = ((d&0x04)==0x04)? 0xFF : 0x00;
-				transferSPI(d&0x01); // 0b00000100
-				_delay_us(640);
-			}
 			
 			radioWriteReg(OPCONTROL1_REG, 0x00);
 		} else {
@@ -511,8 +502,8 @@ void radioMode(uint8_t mode){
 	radioWriteReg(GPIO_0_CFG, GPIO_TXST);
 	radioWriteReg(GPIO_1_CFG, GPIO_RXST);
 	radioWriteReg(GPIO_2_CFG, GPIO_PMBLDET);
-	
-	radioWriteReg(0x06, 0x00);		// Disable all interrupts
+	//																								Add		R/W	Function/Desc		[7]			[6]			[5]			[4]			[3]			[2]			[1]			[0]		Reset Value
+	radioWriteReg(0x06, 0x00);		// Disable all interrupts										06		R/W	Interrupt Enable 2	enswdet		enpreaval	enpreainval	enrssi		enwut		enlbd		enchiprdy	enpor	03h
 	radioWriteReg(0x07, 0x01);		// Set READY mode
 	radioWriteReg(0x09, 0x7F);		// Cap = 12.5pF
 	radioWriteReg(0x0A, 0x05);		// Clk output is 2MHz
@@ -526,7 +517,7 @@ void radioMode(uint8_t mode){
 
 	radioWriteReg(0x1C, 0x1D);		// IF filter bandwidth
 	radioWriteReg(0x1D, 0x40);		// AFC Loop
-	//radioWriteReg(0x1E, 0x0A);	// AFC timing
+	// radioWriteReg(0x1E, 0x0A);	// AFC timing
 
 	radioWriteReg(0x20, 0xA1);		// clock recovery
 	radioWriteReg(0x21, 0x20);		// clock recovery
@@ -535,13 +526,13 @@ void radioMode(uint8_t mode){
 	radioWriteReg(0x24, 0x00);		// clock recovery timing
 	radioWriteReg(0x25, 0x0A);		// clock recovery timing
 
-	//radioWriteReg(0x2A, 0x18);
-	radioWriteReg(0x2C, 0x00);
-	radioWriteReg(0x2D, 0x00);
-	radioWriteReg(0x2E, 0x00);
+	// radioWriteReg(0x2A, 0x18);	// AFC Limiter
+	radioWriteReg(0x2C, 0x00);		// OOK Counter
+	radioWriteReg(0x2D, 0x00);		// OOK Counter
+	radioWriteReg(0x2E, 0x00);		// Slicer Peak Hold
 
-	radioWriteReg(0x6E, 0x27);		// TX data rate 1
-	radioWriteReg(0x6F, 0x52);		// TX data rate 0
+	radioWriteReg(0x6E, 0x4E);		// TX data rate 1 was 0x27
+	radioWriteReg(0x6F, 0xA5);		// TX data rate 0 was 0x52
 
 	radioWriteReg(0x30, 0x00);		// Data access control <steve> 0x8C
 
@@ -559,7 +550,7 @@ void radioMode(uint8_t mode){
 	radioWriteReg(0x3B, 'E');		// set tx header 2
 	radioWriteReg(0x3C, 'W');		// set tx header 1
 	radioWriteReg(0x3D, 'S');		// set tx header 0
-	//radioWriteReg(0x3E, 17);		// set packet length to 17 bytes (max size: 255 bytes)
+	// radioWriteReg(0x3E, 17);		// set packet length to 17 bytes (max size: 255 bytes)
 	radioWriteReg(0x3E, 50);	// set packet length to PKTSIZE bytes (max size: 255 bytes)
 
 	radioWriteReg(0x3F, '*');		// set rx header
@@ -571,31 +562,31 @@ void radioMode(uint8_t mode){
 	radioWriteReg(0x45, 0xFF);		// check all bits
 	radioWriteReg(0x46, 0xFF);		// Check all bits
 
-	radioWriteReg(0x56, 0x02);		// <steve> Something to do with I/Q Swapping
+	// radioWriteReg(0x56, 0x02);		// <steve> Something to do with I/Q Swapping
 
 	radioWriteReg(0x6D, 0x00);		// Tx power to max
 
 	radioWriteReg(0x79, 0x00);		// no frequency hopping
 	radioWriteReg(0x7A, 0x00);		// no frequency hopping
 
-	radioWriteReg(0x71, 0x12);		// GFSK, fd[8]=0, no invert for TX/RX data, FIFO mode, txclk-->gpio
+	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
 
-	radioWriteReg(0x72, 0x48);		// Frequency deviation setting to 45K=72*625
+	radioWriteReg(0x72, 8);			// Frequency deviation setting to 5 kHz, total 10 kHz deviation, 5000/625
 
-	radioWriteReg(0x73, 0x00);		// No frequency offset
+	radioWriteReg(0x73, 31);		// No frequency offset
 	radioWriteReg(0x74, 0x00);		// No frequency offset
 
 	radioWriteReg(0x75, 0x53);		// frequency set to 434MHz
 	radioWriteReg(0x76, 0x64);		// frequency set to 434MHz
 	radioWriteReg(0x77, 0x00);		// frequency set to 434Mhz
 
-	radioWriteReg(0x5A, 0x7F);
-	radioWriteReg(0x59, 0x40);
-	radioWriteReg(0x58, 0x80);
+	// radioWriteReg(0x5A, 0x7F);
+	// radioWriteReg(0x59, 0x40);
+	// radioWriteReg(0x58, 0x80);		// cpcuu[7:0], whatever this is
 
-	radioWriteReg(0x6A, 0x0B);
-	radioWriteReg(0x68, 0x04);
-	radioWriteReg(0x1F, 0x03);
+	// radioWriteReg(0x6A, 0x0B);
+	// radioWriteReg(0x68, 0x04);
+	radioWriteReg(0x1F, 0x03);		// Clock Recovery Value
 	
 	
 	#if defined(RFM22B)
@@ -610,6 +601,84 @@ void radioWriteReg(uint8_t regAddress, uint8_t regValue){
 	CS_RFM = HIGH;
 }
 
+uint8_t radioReadReg(uint8_t regAddress){
+	CS_RFM = LOW;
+		transferSPI(regAddress);
+		uint8_t value = transferSPI(0x00);
+	CS_RFM = HIGH;
+	return value;
+}
+
+void transmitELT_Beacon(void){
+	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
+		radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
+		//printf("Fail on Preset: Beacon\n");
+		_delay_ms(2);
+	}
+	
+	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
+	radioWriteReg(0x72, 7);		// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
+	
+	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
+	_delay_ms(4);
+	
+	for(uint8_t n=0; n<BEACON_NOTES; n++){
+		radioWriteReg(0x6D, beaconNotes[n][2]);
+		_delay_ms(2);
+		SPCR = 0;
+		CS_RFM = LOW;
+		for(uint16_t d=0; d<beaconNotes[n][1]; d++){
+			FORCE_MOSI = d&0x01;
+			_delay_us(beaconNotes[n][0]-66); // Getting 416 Hz A4 w/o correction, means its adding 66 uS
+		}
+		SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR0);
+	}
+}
+
+void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
+	
+	
+	radioWriteReg(0x08,0x01);
+	_delay_ms(1);
+	radioWriteReg(0x08,0x00);
+	radioWriteReg(0x71, 0x23);
+	radioWriteReg(0x72, 16);
+	radioWriteReg(0x6D, 7);
+	
+	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
+		radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
+		//printf("Fail on Preset: Packet\n");
+		_delay_ms(2);
+	}
+	
+	uint8_t targetArray[] = "KE7ZLH,235959,040396417,111758380,08,11,1465,3836,4597,3041\0";
+	//				FCC ID, UTC Fix, Lat, Long, # Sat's, HDOP, Altitude, LiPoly, System In, AtMega
+	
+	CS_RFM = LOW;
+		transferSPI((RFM_WRITE<<7) | 0x7F);
+		transferSPI(0x00);
+		for(uint8_t i=0; i<4; i++){
+			transferSPI(0xAA);
+		}
+		transferSPI(0x09);
+		for(uint8_t i=0; i<BUFFER_SIZE; i++){ // String, obvious consequences if there is no \0 present
+			if(targetArray[i] == '\0') break;
+			transferSPI(targetArray[i]);
+			//if(i == BUFFER_SIZE) printf("Fail on String\n");
+		}
+	CS_RFM = HIGH;
+	
+	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
+
+	for(uint8_t i=0; i<255; i++){
+		if((radioReadReg(0x07)&0x08) == 0){
+			//printf("Break@ %u\n",i);
+			break;
+		}
+		_delay_ms(1);
+	}
+}
+
 void updateVolts(void){
 	uint16_t lipoly = 0; // An array or struct would be more condusive?
 	uint16_t sysVin = 0;
@@ -619,7 +688,7 @@ void updateVolts(void){
 	for(uint8_t j=0; j<4; j++){
 		lipoly += readADC(ADC_VBAT);
 		sysVin += readADC(ADC_VIN);
-		for(uint8_t i=0; i<4; i++) readADC(ADC_VSYS);
+		for(uint8_t i=0; i<4; i++) readADC(ADC_VSYS); // Pre-heat the VSYS ADC Input
 		atMegaVolt += readAdcNoiseReduced(ADC_VSYS); // [4092:0]
 	}
 	lipoly >>= 2; // [1023:0]
