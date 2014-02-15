@@ -162,7 +162,18 @@ void flashBlueLED(uint8_t, uint8_t, uint8_t);
 
 // Global Variables
 static FILE uart_io = FDEV_SETUP_STREAM(putUARTchar, NULL, _FDEV_SETUP_WRITE);
-//static uint8_t dataBufferA[BUFFER_SIZE]; //volatile
+static char dataBufferA[BUFFER_SIZE]; //volatile
+// FCC ID, Lat, Long, UTC Fix, # Sat's, HDOP, Altitude, LiPoly, System In, AtMega
+const uint8_t fccId[] = "KE7ZLH";
+
+static struct{
+	int32_t lat:30;		// 536870912 > 089999999
+	int32_t lon:30;		// 536870912 > 179999999
+	uint32_t time:20;	// 262143 > 235959
+	int16_t alt;			// 16384 Max
+	uint8_t sats;		
+	uint8_t hdop;		
+} gps;
 
 #define BEACON_NOTES 6
 static uint16_t beaconNotes[BEACON_NOTES][3] = {{1136,704,7},{902,222,4},{758,264,3},{851,235,2},{675,296,1},{568,352,0}};
@@ -173,6 +184,8 @@ static uint16_t beaconNotes[BEACON_NOTES][3] = {{1136,704,7},{902,222,4},{758,26
 //	uS/2	1136	902		758		851		675		568
 //	Times	0.8		0.2		0.2		0.2		0.2		0.2
 //	TxPwr	7		4		3		2		1		0
+//	In dBm	+20		+11		+8		+5		+2		+1
+//	In mW	100		12.6	6.3		3.2		1.6		1.3
 
 static struct{
 	uint8_t sleepInterval:3;
@@ -333,7 +346,7 @@ void loop(void){
 			// radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon) | (1<<RFM_xton));
 			// _delay_ms(10);
 			
-			transmitELT_Packet();
+			transmitELT_Packet(); // Want to send packet before battery sags in worst case
 			_delay_ms(1);
 			transmitELT_Beacon();
 			_delay_ms(1);
@@ -573,8 +586,8 @@ void radioMode(uint8_t mode){
 
 	radioWriteReg(0x72, 8);			// Frequency deviation setting to 5 kHz, total 10 kHz deviation, 5000/625
 
-	radioWriteReg(0x73, 31);		// No frequency offset
-	radioWriteReg(0x74, 0x00);		// No frequency offset
+	radioWriteReg(0x73, 32);		// Frequency offset in 156.25 Hz Increments, Crawls between 4840 and 5040 Hz, 5740 May be a better
+	radioWriteReg(0x74, 0x00);		// Frequency offset
 
 	radioWriteReg(0x75, 0x53);		// frequency set to 434MHz
 	radioWriteReg(0x76, 0x64);		// frequency set to 434MHz
@@ -651,8 +664,13 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 		_delay_ms(2);
 	}
 	
-	uint8_t targetArray[] = "KE7ZLH,235959,040396417,111758380,08,11,1465,3836,4597,3041\0";
-	//				FCC ID, UTC Fix, Lat, Long, # Sat's, HDOP, Altitude, LiPoly, System In, AtMega
+	//uint8_t targetArray[] = "KE7ZLH,040396417,111758380,235959,08,11,1465,3836,4597,3041\0";
+	//				FCC ID, Lat, Long, UTC Fix, # Sat's, HDOP, Altitude, LiPoly, System In, AtMega
+	//				Slightly Reordered from $GPGGA. Want Lat/Long in front, incase of clock skew, battery lag
+	snprintf(dataBufferA,BUFFER_SIZE,"KE7ZLH,%+.9li,%+.9li,%.6lu,%u,%u,%+.4i,%u,%u,%u*\n", 
+		(int32_t)gps.lat,(int32_t)gps.lon,(uint32_t)gps.time,gps.sats,gps.hdop,gps.alt,volt.lipoly,volt.sysVin,volt.atMega);
+	
+	printf("%s",dataBufferA);
 	
 	CS_RFM = LOW;
 		transferSPI((RFM_WRITE<<7) | 0x7F);
@@ -662,8 +680,8 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 		}
 		transferSPI(0x09);
 		for(uint8_t i=0; i<BUFFER_SIZE; i++){ // String, obvious consequences if there is no \0 present
-			if(targetArray[i] == '\0') break;
-			transferSPI(targetArray[i]);
+			if(dataBufferA[i] == '\0') break;
+			transferSPI(dataBufferA[i]);
 			//if(i == BUFFER_SIZE) printf("Fail on String\n");
 		}
 	CS_RFM = HIGH;
