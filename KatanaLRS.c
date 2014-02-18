@@ -853,7 +853,7 @@ void transmitELT_Beacon(void){
 		radioWriteReg(0x6D, beaconNotes[n][2]);
 		_delay_ms(2);
 		SPCR = 0;
-		CS_RFM = LOW;
+		CS_RFM = HIGH;
 		for(uint16_t d=0; d<beaconNotes[n][1]; d++){
 			FORCE_MOSI = d&0x01;
 			_delay_us(beaconNotes[n][0]-66); // Getting 416 Hz A4 w/o correction, means its adding 66 uS
