@@ -72,15 +72,16 @@
 #define VIN_CUTOFF		3800
 
 // System Constants
-#define DOWN 			0 // Only Wake on Interrupts
-#define SLEEP			1 // Sleep, waking using Watchdog
-#define STANDBY 		2 // Non-Transmitting State
-#define ACTIVE 			3 // Fully-Active Mode
-#define INT_SRC_CLEAR	0
-#define INT_SRC_INTx	1
-#define INT_SRC_WDT		2
-#define INT_SRC_UART	3
-#define INT_SRC_TIMER	4
+#define DOWN 			0 // Configure RFM/SI4432 to interrupt on Rx Packet or RSSI, only wake on this interrupt
+#define SLEEP			1 // Sleep, wake on watchdog, measure RSSI, transmit packet and tones
+#define BEACON	 		2 // Same as SLEEP, but continuous. Activated on RX RSSI, Resume SLEEP in 2 Minutes
+#define ACTIVE 			3 // Normal Operation as an LRS Receiver, no transmission behaviors
+#define FAILSAFE		7 // Failsafe Condition, entered on loss of LRS packets
+// #define INT_SRC_CLEAR	0
+// #define INT_SRC_RFM		0b1
+// #define INT_SRC_WDT		0b10
+// #define INT_SRC_UART	0b100
+// #define INT_SRC_TIMER1	0b1000
 #define HIGH			1
 #define LOW				0
 #define RFM_READ		0 // RFM Direction Flags
@@ -146,6 +147,8 @@ uint8_t atMegaInit(void);
 void radioMode(uint8_t);
 void radioWriteReg(uint8_t, uint8_t);
 uint8_t radioReadReg(uint8_t);
+uint8_t radioReadRSSI(void);
+void transmitELT(void);
 void transmitELT_Beacon(void);
 void transmitELT_Packet(void); //uint8_t *,uint8_t);
 void updateVolts(void);
@@ -191,10 +194,17 @@ static struct{
 	uint8_t sleepInterval:3;
 	uint8_t wdtSlpEn:1;
 } configFlags;
+typedef struct{
+	uint8_t rfm:1;
+	uint8_t wdt:1;
+	uint8_t uart:1;
+	uint8_t timer1:1;
+} intSrcType;
 static volatile struct{
-	uint8_t systemState:2;
-	uint8_t intSource:3;
+	uint8_t systemState:3;
+	intSrcType intSource;
 	uint8_t monitorMode:1;
+	uint8_t statusLEDs:1;
 	uint8_t powerState:1;
 	uint8_t batteryState:1;
 } stateFlags;
@@ -206,37 +216,32 @@ static struct{
 
 // Interrupt Vectors (Listed in Priority Order)
 ISR(INT0_vect){
-	stateFlags.intSource = INT_SRC_INTx;
-	EIMSK = 0;
-}
-
-ISR(INT1_vect){
-	stateFlags.intSource = INT_SRC_INTx;
+	stateFlags.intSource.rfm = 1;
 	EIMSK = 0;
 }
 
 ISR(PCINT2_vect){
-	stateFlags.intSource = INT_SRC_UART;
+	stateFlags.intSource.uart = 1;
 	PCICR = 0;
 	PCMSK2 = 0;
 }
 
 ISR(WDT_vect){
-	stateFlags.intSource = INT_SRC_WDT;
+	stateFlags.intSource.wdt = 1;
 }
 
 ISR(TIMER1_COMPA_vect){
-	stateFlags.intSource = INT_SRC_TIMER;
+	stateFlags.intSource.timer1 = 1;
 }
 
 ISR(TIMER1_COMPB_vect){
 }
 
-ISR(TIMER0_OVF_vect){
-}
+// ISR(TIMER0_OVF_vect){
+// }
 
 ISR(USART_RX_vect){
-	stateFlags.intSource = INT_SRC_UART;
+	stateFlags.intSource.uart = 1;
 	stateFlags.monitorMode = 0;
 	
 	uint8_t command = UDR0;
@@ -308,6 +313,7 @@ void setup(void){
 	//	WDRF BORF EXTRF PORF
 	
 	flashOrangeLED(10,10,40);
+	stateFlags.monitorMode = 1;
 	
 	printf("Device ID Check: ");
 	if(deviceIdCheck()){
@@ -323,57 +329,118 @@ void setup(void){
 }
 
 void loop(void){
-	if(stateFlags.intSource == INT_SRC_WDT){
-		stateFlags.intSource = INT_SRC_CLEAR;
+	static uint8_t noiseFloor = 60; // Start with ~ -80 dBm, will work down from this
+	uint16_t rfmIntList = 0; // No Persistance
+	
+	// Assert Concurrent Outputs (Outputs not tied to a FSM State, but merely from inputs)
+	OCR1A = (stateFlags.statusLEDs && stateFlags.powerState)? volt.lipoly : 0;
+	if(stateFlags.statusLEDs) LED_OR = HIGH; //flashOrangeLED(2,5,5); // Solve Delay timing issue
+	
+	
+	// Update the inputs to the state transition logic, cli here?
+	if(stateFlags.intSource.rfm){
+		rfmIntList = radioReadReg(0x03);
+		rfmIntList |= radioReadReg(0x04)<<8;
+		stateFlags.intSource.rfm = 0;
+	}
+	if(stateFlags.intSource.wdt){
 		
 		updateVolts();
 		
-		stateFlags.monitorMode = 1;
-		#ifdef TRANSMITTER
-		if(stateFlags.monitorMode==1){
-			flashOrangeLED(2,5,5);
-			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",volt.lipoly,volt.sysVin,volt.atMega);
-		}
-		#endif // TRANSMITTER
-		#ifdef RFM22B
-		if(stateFlags.monitorMode==1 && stateFlags.batteryState==1){
-			flashOrangeLED(2,5,5);
-			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",volt.lipoly,volt.sysVin,volt.atMega);
-			
-
-			radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
-			_delay_ms(1);
-			// radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon) | (1<<RFM_xton));
-			// _delay_ms(10);
-			
-			transmitELT_Packet(); // Want to send packet before battery sags in worst case
-			_delay_ms(1);
-			transmitELT_Beacon();
-			_delay_ms(1);
-			
-			
-			radioWriteReg(OPCONTROL1_REG, 0x00);
-		} else {
-			radioWriteReg(OPCONTROL1_REG, 0x00);
-		}
-		#endif // RFM22B
 		
-		uint8_t tempReg = WDTCSR;
-		tempReg |= _BV(WDIE);
-		WDTCSR |= (1<<WDCE)|(1<<WDE);
-		WDTCSR = tempReg;
+		uint8_t rssi = radioReadRSSI();
+		noiseFloor = (rssi > (noiseFloor+60))? (noiseFloor+1) : (noiseFloor - (noiseFloor>>4) + (rssi>>4));
+		
+		
+		if(stateFlags.monitorMode==1){
+			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\n",volt.lipoly,volt.sysVin,volt.atMega,noiseFloor);
+		}
+		stateFlags.intSource.wdt = 0;
 	}
-	if(stateFlags.intSource == INT_SRC_TIMER){
+	if(stateFlags.intSource.timer1){
+		stateFlags.intSource.timer1 = 0;
+	}
+	if(stateFlags.intSource.uart){
+		stateFlags.intSource.uart = 0;
 	}
 	
-	#ifdef RECEIVER
-	if(stateFlags.powerState){
-		OCR1A = volt.lipoly;
-	} else{
-		OCR1A = 0;
-		systemSleep(8);
+	// Carry out the current State processes and determine next state
+	switch(stateFlags.systemState){
+		case DOWN:
+			if(rfmIntList&(1<<(1))){
+				uint8_t firstByte = radioReadReg(0x7F);
+				if(firstByte&(1<<7)) stateFlags.systemState = SLEEP;
+				else stateFlags.systemState = ACTIVE; //(1<<(6+8)) For Preamble
+			} else stateFlags.systemState = (stateFlags.batteryState)? SLEEP : DOWN;
+			
+			uint8_t tempReg = WDTCSR;
+			tempReg |= _BV(WDIE);
+			WDTCSR |= (1<<WDCE)|(1<<WDE);
+			WDTCSR = tempReg;
+			
+			EICRA = 0;
+			EIMSK = (1<<INT1); //|(1<<INT0);
+			
+			systemSleep(8);
+			break;
+		case SLEEP:
+			transmitELT();
+			
+			
+			if(rfmIntList&(1<<(1))){ // We've Received a Valid Packet, either bind or normal LRS
+				uint8_t firstByte = radioReadReg(0x7F);
+				if(firstByte&(1<<7)) stateFlags.systemState = BEACON;
+				else stateFlags.systemState = ACTIVE; //(1<<(6+8)) For Preamble
+			} else if(rfmIntList&(1<<(4+8))){ // Otherwise, Check for RSSI
+				stateFlags.systemState = BEACON;
+			} else stateFlags.systemState = (stateFlags.batteryState)? SLEEP : DOWN;
+			
+			radioWriteReg(0x05, (1<<1)); // Enable Valid Packet Received Interrupt
+			radioWriteReg(0x06, (1<<4)); // Enable RSSI Interrupt
+			radioWriteReg(0x27, (noiseFloor+60)); // Configure RSSI for +30dBm Level Threshold
+			
+			
+			
+			uint8_t tempReg = WDTCSR;
+			tempReg |= _BV(WDIE);
+			WDTCSR |= (1<<WDCE)|(1<<WDE);
+			WDTCSR = tempReg;
+			
+			EICRA = 0;
+			EIMSK = (1<<INT1); //|(1<<INT0);
+			
+			systemSleep(8);
+			break;
+		case BEACON:
+			transmitELT();
+			
+			
+			if(rfmIntList&(1<<(1))){ // We've Received a Valid Packet, either bind or normal LRS
+				uint8_t firstByte = radioReadReg(0x7F);
+				if(firstByte&(1<<7)) stateFlags.systemState = BEACON;
+				else stateFlags.systemState = ACTIVE; //(1<<(6+8)) For Preamble
+			} else if(rfmIntList&(1<<(4+8))){ // Otherwise, Check for RSSI
+				stateFlags.systemState = BEACON;
+			} else stateFlags.systemState = (stateFlags.batteryState)? SLEEP : DOWN;
+			
+			stateFlags.systemState = (stateFlags.powerState)? BEACON : SLEEP;
+			break;
+		case ACTIVE:
+			
+			break;
+		case FAILSAFE:
+			
+			break;
+		default:
+			stateFlags.systemState = FAILSAFE;
+			
 	}
-	#endif // RECEIVER
+	
+	
+	
+
+	
+	LED_OR = LOW;
 }
 
 void printRegisters(void){
@@ -544,8 +611,8 @@ void radioMode(uint8_t mode){
 	radioWriteReg(0x2D, 0x00);		// OOK Counter
 	radioWriteReg(0x2E, 0x00);		// Slicer Peak Hold
 
-	radioWriteReg(0x6E, 0x4E);		// TX data rate 1 was 0x27
-	radioWriteReg(0x6F, 0xA5);		// TX data rate 0 was 0x52
+	radioWriteReg(0x6E, 0x27);		// 0x27 for 4800, 0x4E for 9600
+	radioWriteReg(0x6F, 0x52);		// 0x52 for 4800, 0xA5 for 9600
 
 	radioWriteReg(0x30, 0x00);		// Data access control <steve> 0x8C
 
@@ -622,6 +689,43 @@ uint8_t radioReadReg(uint8_t regAddress){
 	return value;
 }
 
+uint8_t radioReadRSSI(void){
+	if((radioReadReg(OPCONTROL1_REG)&(1<<RFM_rxon)) != (1<<RFM_rxon)){
+		// printf("%X\n",radioReadReg(OPCONTROL1_REG));
+		radioWriteReg(OPCONTROL1_REG, (1<<RFM_rxon));
+		
+		_delay_ms(3);
+		
+		// for(uint8_t i=0; i<255; i++){
+			// if((radioReadReg(0x02)&0x01) != 1){
+				// printf("Not Rx@ %u\n",i);
+				// //break;
+			// }
+			// _delay_ms(1);
+		// }
+		// for(uint8_t i=0; i<255; i++){
+			// if((radioReadReg(0x02)&0x01) == 0){
+				// printf("Break@ %u\n",i);
+				// break;
+			// }
+			// _delay_ms(1);
+		// }
+		
+		radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
+	}
+	
+	return radioReadReg(0x26);
+}
+
+void transmitELT(void){
+	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
+	_delay_ms(1);
+	transmitELT_Packet(); // Want to send packet before battery sags in worst case
+	_delay_ms(1);
+	transmitELT_Beacon();
+	radioWriteReg(OPCONTROL1_REG, 0x00);
+}
+
 void transmitELT_Beacon(void){
 	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
 		radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
@@ -633,7 +737,7 @@ void transmitELT_Beacon(void){
 	radioWriteReg(0x72, 7);		// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
 	
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
-	_delay_ms(4);
+	_delay_ms(1);
 	
 	for(uint8_t n=0; n<BEACON_NOTES; n++){
 		radioWriteReg(0x6D, beaconNotes[n][2]);
@@ -651,26 +755,25 @@ void transmitELT_Beacon(void){
 void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	
 	
-	radioWriteReg(0x08,0x01);
-	_delay_ms(1);
-	radioWriteReg(0x08,0x00);
-	radioWriteReg(0x71, 0x23);
-	radioWriteReg(0x72, 16);
-	radioWriteReg(0x6D, 7);
+	radioWriteReg(0x08,0x01);		// FIFO Clear Sequence
+	_delay_ms(1);					
+	radioWriteReg(0x08,0x00);		
+	radioWriteReg(0x71, 0x23);		// GFSK, FIFO Used
+	radioWriteReg(0x72, 20);		// ~20kHz Peak-Peak Deviation
+	radioWriteReg(0x6D, 7);			// Max Power
 	
 	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
 		radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
-		//printf("Fail on Preset: Packet\n");
+		// printf("Fail on Preset: Packet\n");
 		_delay_ms(2);
 	}
 	
-	//uint8_t targetArray[] = "KE7ZLH,040396417,111758380,235959,08,11,1465,3836,4597,3041\0";
-	//				FCC ID, Lat, Long, UTC Fix, # Sat's, HDOP, Altitude, LiPoly, System In, AtMega
-	//				Slightly Reordered from $GPGGA. Want Lat/Long in front, incase of clock skew, battery lag
+	//		FCC ID, Lat, Long, UTC Fix, # Sat's, HDOP, Altitude, LiPoly, System In, AtMega
+	//		Slightly Reordered from $GPGGA. Want Lat/Long in front, incase of clock skew, battery lag
 	snprintf(dataBufferA,BUFFER_SIZE,"KE7ZLH,%+.9li,%+.9li,%.6lu,%u,%u,%+.4i,%u,%u,%u*\n", 
 		(int32_t)gps.lat,(int32_t)gps.lon,(uint32_t)gps.time,gps.sats,gps.hdop,gps.alt,volt.lipoly,volt.sysVin,volt.atMega);
 	
-	printf("%s",dataBufferA);
+	//printf("%s",dataBufferA);
 	
 	CS_RFM = LOW;
 		transferSPI((RFM_WRITE<<7) | 0x7F);
@@ -690,7 +793,7 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 
 	for(uint8_t i=0; i<255; i++){
 		if((radioReadReg(0x07)&0x08) == 0){
-			//printf("Break@ %u\n",i);
+			// printf("Break@ %u\n",i);
 			break;
 		}
 		_delay_ms(1);
@@ -829,3 +932,152 @@ void flashBlueLED(uint8_t count, uint8_t high, uint8_t low){
 		_delay_ms(low);
 	}
 }
+
+
+/*
+Dragon Link Packet Structures
+
+
+00001100 10000010 10110000 11111110 11111110 01001000 11111110 00000110 10000011 11111110 00010101 10000110 11100001 01001101
+A   B      C        D        E1       E2       E3       E4       E5       E6       E7       E8       E9       F1       F2
+
+A	Flags: Bind and Failsafe Inactive
+B	Byte Count: 12 Bytes beyond ID byte (D)
+C	System ID: 0x82
+D	MSB's for lower 8 channels
+En	9 Channels Payload
+F1	Upper Byte of CRC-16 IBM/ARC
+F2	Lower Byte of CRC-16 IBM/ARC
+
+BIND Behavior:
+01000011 01001111 00000111 10000100 00100110
+A   B      C        D        E        F
+
+A	FailsafeSet Flag is [7], Bind Flag is [6]
+B	Number of payload bytes after System ID Byte
+C	System ID
+D	Number of Channels
+E	Upper CRC-16 Byte
+F	Lower CRC-16 Byte
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+/*
+State Machine Notes
+
+Repeat the State Machine Defines here:
+#define DOWN 			0 // Configure RFM/SI4432 to interrupt on Rx Packet or RSSI, only wake on this interrupt
+#define SLEEP			1 // Sleep, wake on watchdog, measure RSSI, transmit packet and tones
+#define BEACON	 		2 // Same as SLEEP, but continuous. Activated on RX RSSI, Resume SLEEP in 2 Minutes
+#define ACTIVE 			3 // Normal Operation as an LRS Receiver, no transmission behaviors
+
+
+ACTIVE (3):
+	If we are receiving valid R/C LRS Packets, and the System Power-in is good, then we stick with this mode.
+	If we lose R/C Packets for longer than the time-out threshold, we activate the failsafes for the R/C channels.
+	We start timing how long it has been since last valid packet, and do not switch modes until ~30 seconds from last packet
+	Despite switching modes, we will continue to supply Failsafe setpoints as long as powerState is good (R/C servos are still powered)
+	When the powerState flag is cleared, then we stop all PPM, Serial, and/or PWM generation, as the plane is effectively dead, and all electronics presumed also.
+	If we have good R/C packets but the powerState is cleared, this means that we've either crashed hard enough to disconnect system power, 
+		or the flight is over as the pilot has disconnected the battery by hand.
+	Creative Part: How do we know which case is which? My solution at the moment: If the R/C commands are Centered Sticks, Throttle low, then this is end-of-flight.
+		To avoid draining the battery with the beacon mode unnecessairly, we transition to DOWN, which is listening only.
+		
+		
+		
+DOWN (0):
+	This is Listening-Only. The RFM/SI4432 is configured to interrup on a packet match, RSSI threshold, or both.
+	This raises the question: Does the system transition out of this mode if it received a packet, or if there is a RSSI peak?
+		If the interrupt is for a received valid packet, this means that the LRS is back. Transition to ACTIVE. There, if powerState is bad, it just hangs out I guess.
+			Otherwise, if powerState is good, it will resume PPM/PWM/Serial regular operation.
+
+
+SLEEP (1):
+	Every WatchDog cycle, the system wakes, measures RSSI and checks for packet, and transmits the ELT Packet and Tones.
+	If RSSI, Transition to BEACON
+	If Packet, Transition to ACTIVE
+	
+BEACON (2):
+	Sets the WatchDog to 2 Sec, or, alternatively, simply disables it and runs the loop continuously.
+	Starts a count-down timer. On timing out, returns to SLEEP mode.
+	Minor Issue: Does an RSSI or Packet event clear the timer? The danger is that a FHSS packet system is lit-up near by, and thus tripping the RSSI.
+		Because BEACON is sampling the RSSI much faster then SLEEP, it might exhaust the LiPoly quickly while hanging in this mode.
+		So, lets simply make this mode something that has to be re-entered after each time-out. Good move?
+	
+	
+Concurrent Items:
+batteryState: LiPoly is over 3.4v or so
+	If this ever clears, if powerState is good, then no transition/change
+	If powerState is cleared, we transition to DOWN. The problem is that this disables transmitting modes (1 and 2).
+	If we get RSSI or Packet in DOWN, then it needs to be able to respond, and to do so, has to transition to either SLEEP or BEACON.
+	So, batteryState should be enforced in some manner that allows wandering into other states for a bit.
+	
+powerState: KatanaLRS is being powered by the aircraft, sufficient to charge the LiPoly
+	If cleared, disable PPM/PWM/Serial? Bad move, because if the receiver merely is disconnected, then the plane might be good while we shunt it.
+
+RSSI: RFM/SI4432 measures a RSSI that is 30 dBm above noiseFloor
+	Means that a 70cm HT is being keyed. Only applicable it no LRS Packets are being received and we are not ACTIVE mode.
+	Actually, no LRS packets should drive whether we are ACTIVE or not, right?
+	
+Packet: RFM/SI4432 has captured a valid LRS packet
+	Means that the LRS is active. If ACTIVE, this signals the start of processing a new frame. Otherwise, ....
+
+
+
+Lets try in the same style as KatanaLRS-Statemachine.ods
+
+
+		State ->			(Mealy/Concurrent)									DOWN								SLEEP(WDT=8sec)					BEACON							ACTIVE
+		Substate ->																																									failsafe==0							failsafe==1							
+Outputs:
+	PPM/PWM/Serial																Disabled							Disabled						powerState? Enabled:Off			Enabled								Enabled
+	ELT Transmissions															Disabled, Only Rx					Every WDT Wake					Continuous						Disabled							Disabled
+	Indicator LEDs																Disabled							Disabled						Enabled? Want Stealth?			Enabled								Enabled
+Inputs:					
+	RFM/Si4432 Int or Read													
+		RSSI Thresh	(70cm HT Keyed)												Ignore?								BEACON, TIMER=15sec				-								-									-
+		BIND Packet																Delay ~8sec; SLEEP					BEACON, TIMER=1min												-									BEACON, TIMER=1min
+		Valid PACKET															ACTIVE, TIMER=2sec					ACTIVE, TIMER=2sec				ACTIVE, TIMER=2sec				TIMER=2sec							failsafe=0, TIMER=0.2sec
+
+	TIMER Expires / Default Case												WDT Disabled						batteryState? SLEEP:			powerState?						sticksCentered&&(!powerState)? 		powerState? BEACON:SLEEP
+	|																													DOWN							(BEACON,TIMER=1min):			DOWN :
+	|																																					SLEEP							failsafe=1, TIMER=20min
+
+	
+	GPS UART Sentence															Ignore, as not powered				Ignore, as not powered			powerState? Valid? Keep			Valid? Keep							Valid? Keep
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+	
+	
+	
+	
+
+*/
+
