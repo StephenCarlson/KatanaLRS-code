@@ -77,13 +77,10 @@
 #define BEACON	 		2 // Same as SLEEP, but continuous. Activated on RX RSSI, Resume SLEEP in 2 Minutes
 #define ACTIVE 			3 // Normal Operation as an LRS Receiver, no transmission behaviors
 #define FAILSAFE		7 // Failsafe Condition, entered on loss of LRS packets
-// #define INT_SRC_CLEAR	0
-// #define INT_SRC_RFM		0b1
-// #define INT_SRC_WDT		0b10
-// #define INT_SRC_UART	0b100
-// #define INT_SRC_TIMER1	0b1000
 #define HIGH			1
 #define LOW				0
+#define ENABLED			1
+#define DISABLED		0
 #define RFM_READ		0 // RFM Direction Flags
 #define RFM_WRITE		1 
 #define I2C_READ		1 // I2C Direction Flags
@@ -141,6 +138,10 @@ typedef struct{
 // Function Prototypes
 void setup(void);
 void loop(void);
+void rcOutputs(uint8_t);
+void uartIntConfig(uint8_t);
+void wdtIntConfig(uint8_t, uint8_t);
+void rfmIntConfig(uint8_t, uint8_t);
 void printRegisters(void);
 uint8_t systemSleep(uint8_t);
 uint8_t atMegaInit(void);
@@ -148,10 +149,12 @@ void radioMode(uint8_t);
 void radioWriteReg(uint8_t, uint8_t);
 uint8_t radioReadReg(uint8_t);
 uint8_t radioReadRSSI(void);
+void rfmReadFIFO(uint8_t *array);
+uint16_t rfmReadIntrpts(void);
 void transmitELT(void);
 void transmitELT_Beacon(void);
 void transmitELT_Packet(void); //uint8_t *,uint8_t);
-void updateVolts(void);
+void updateVolts(uint8_t);
 
 char deviceIdCheck(void);
 void printHelpInfo(void);
@@ -166,6 +169,21 @@ void flashBlueLED(uint8_t, uint8_t, uint8_t);
 // Global Variables
 static FILE uart_io = FDEV_SETUP_STREAM(putUARTchar, NULL, _FDEV_SETUP_WRITE);
 static char dataBufferA[BUFFER_SIZE]; //volatile
+
+static volatile uint16_t hopGlitchCount = 0;
+
+static struct{
+	uint16_t ch1:10;
+	uint16_t ch2:10;
+	uint16_t ch3:10;
+	uint16_t ch4:10;
+	uint16_t ch5:10;
+	uint16_t ch6:10;
+	uint16_t ch7:10;
+	uint16_t ch8:10;
+} rcCommands;
+
+
 // FCC ID, Lat, Long, UTC Fix, # Sat's, HDOP, Altitude, LiPoly, System In, AtMega
 const uint8_t fccId[] = "KE7ZLH";
 
@@ -198,16 +216,16 @@ typedef struct{
 	uint8_t rfm:1;
 	uint8_t wdt:1;
 	uint8_t uart:1;
-	uint8_t timer1:1;
+	uint8_t timer0:1;
 } intSrcType;
 static volatile struct{
-	uint8_t systemState:3;
-	intSrcType intSource;
+	uint8_t state:3;
+	intSrcType intSrc;
 	uint8_t monitorMode:1;
 	uint8_t statusLEDs:1;
 	uint8_t powerState:1;
 	uint8_t batteryState:1;
-} stateFlags;
+} sys;
 static struct{
 	uint16_t lipoly;
 	uint16_t sysVin;
@@ -216,33 +234,36 @@ static struct{
 
 // Interrupt Vectors (Listed in Priority Order)
 ISR(INT0_vect){
-	stateFlags.intSource.rfm = 1;
+	sys.intSrc.rfm = 1;
 	EIMSK = 0;
 }
 
 ISR(PCINT2_vect){
-	stateFlags.intSource.uart = 1;
+	sys.intSrc.uart = 1;
 	PCICR = 0;
 	PCMSK2 = 0;
 }
 
 ISR(WDT_vect){
-	stateFlags.intSource.wdt = 1;
+	sys.intSrc.wdt = 1;
 }
 
-ISR(TIMER1_COMPA_vect){
-	stateFlags.intSource.timer1 = 1;
-}
-
-ISR(TIMER1_COMPB_vect){
-}
-
-// ISR(TIMER0_OVF_vect){
+// ISR(TIMER1_COMPA_vect){
+	// sys.intSrc.timer0 = 1;
+	// hopGlitchCount += 1;
 // }
 
+// ISR(TIMER1_COMPB_vect){
+// }
+
+ISR(TIMER0_COMPA_vect){
+	sys.intSrc.timer0 = 1;
+	hopGlitchCount += 1;
+}
+
 ISR(USART_RX_vect){
-	stateFlags.intSource.uart = 1;
-	stateFlags.monitorMode = 0;
+	sys.intSrc.uart = 1;
+	sys.monitorMode = 0;
 	
 	uint8_t command = UDR0;
 	
@@ -251,7 +272,7 @@ ISR(USART_RX_vect){
 			printf("Battery: %u\n", volt.atMega);
 			break;
 		case 'M':
-			stateFlags.monitorMode = 1;
+			sys.monitorMode = 1;
 			break;
 		case '?':
 			printHelpInfo();
@@ -289,11 +310,11 @@ int main(void){
 
 void setup(void){
 	uint8_t startStatus = atMegaInit();
-	stateFlags.systemState = ACTIVE;
+	sys.state = ACTIVE;
 	
 	for(uint8_t i=0; i<5; i++){
 		radioWriteReg(0x07, 0x80);		// Reset the Chip
-		_delay_ms(1);
+		_delay_ms(10);
 	}
 	for(uint8_t i=0; i<0xFF; i++){
 		if((radioReadReg(0x05)&0x02) == 0x02) break;
@@ -313,11 +334,12 @@ void setup(void){
 	//	WDRF BORF EXTRF PORF
 	
 	flashOrangeLED(10,10,40);
-	stateFlags.monitorMode = 1;
+	sys.monitorMode = 1;
 	
 	printf("Device ID Check: ");
 	if(deviceIdCheck()){
 		printf("OK\n");
+		transmitELT();
 	} else{
 		printf("FAILED!\n");
 	}	
@@ -330,117 +352,188 @@ void setup(void){
 
 void loop(void){
 	static uint8_t noiseFloor = 60; // Start with ~ -80 dBm, will work down from this
-	uint16_t rfmIntList = 0; // No Persistance
+	static uint8_t eltTransmitCount = 0;
+	static uint16_t failsafeCounter = 0;
+	
+	uint16_t rfmIntList = 0;
+	uint8_t rfmFIFO[16];
+	#define RFM_INT_VALID_PACKET_RX (1<<(1))
+	#define DL_BIND_FLAG (1<<7)
 	
 	// Assert Concurrent Outputs (Outputs not tied to a FSM State, but merely from inputs)
-	OCR1A = (stateFlags.statusLEDs && stateFlags.powerState)? volt.lipoly : 0;
-	if(stateFlags.statusLEDs) LED_OR = HIGH; //flashOrangeLED(2,5,5); // Solve Delay timing issue
+	OCR1A = (sys.statusLEDs && sys.powerState)? (volt.lipoly-2800)<<5 : 0; //[3000:4200] -> [10k;60k]
+	if(sys.statusLEDs) LED_OR = HIGH; //flashOrangeLED(2,5,5); // Solve Delay timing issue
 	
 	
-	// Update the inputs to the state transition logic, cli here?
-	if(stateFlags.intSource.rfm){
-		rfmIntList = radioReadReg(0x03);
-		rfmIntList |= radioReadReg(0x04)<<8;
-		stateFlags.intSource.rfm = 0;
-	}
-	if(stateFlags.intSource.wdt){
-		
-		updateVolts();
-		
-		
-		uint8_t rssi = radioReadRSSI();
-		noiseFloor = (rssi > (noiseFloor+60))? (noiseFloor+1) : (noiseFloor - (noiseFloor>>4) + (rssi>>4));
-		
-		
-		if(stateFlags.monitorMode==1){
-			printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\n",volt.lipoly,volt.sysVin,volt.atMega,noiseFloor);
-		}
-		stateFlags.intSource.wdt = 0;
-	}
-	if(stateFlags.intSource.timer1){
-		stateFlags.intSource.timer1 = 0;
-	}
-	if(stateFlags.intSource.uart){
-		stateFlags.intSource.uart = 0;
-	}
 	
+	//if(sys.intSrc.wdt){
+		printf("State: %s\tLipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\n",
+			(sys.state == 0)? "DOWN" :(sys.state == 1)? "SLEEP" :(sys.state == 2)? "BEACON" :
+			(sys.state == 3)? "ACTIVE" : "FAILSAFE",volt.lipoly,volt.sysVin,volt.atMega,noiseFloor);
+
+	//}
+		
 	// Carry out the current State processes and determine next state
-	switch(stateFlags.systemState){
+	switch(sys.state){ // Native State Machine
 		case DOWN:
-			if(rfmIntList&(1<<(1))){
-				uint8_t firstByte = radioReadReg(0x7F);
-				if(firstByte&(1<<7)) stateFlags.systemState = SLEEP;
-				else stateFlags.systemState = ACTIVE; //(1<<(6+8)) For Preamble
-			} else stateFlags.systemState = (stateFlags.batteryState)? SLEEP : DOWN;
-			
-			uint8_t tempReg = WDTCSR;
-			tempReg |= _BV(WDIE);
-			WDTCSR |= (1<<WDCE)|(1<<WDE);
-			WDTCSR = tempReg;
-			
-			EICRA = 0;
-			EIMSK = (1<<INT1); //|(1<<INT0);
-			
-			systemSleep(8);
+			// Refresh information
+				updateVolts(0);
+				rfmIntList = 0; //rfmReadIntrpts();
+			// Determine nextState using refreshed information
+				if(rfmIntList&RFM_INT_VALID_PACKET_RX){
+					// rfmReadFIFO(rfmFIFO);
+					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = SLEEP;
+					// else sys.state = ACTIVE;
+				} else sys.state = (sys.batteryState)? SLEEP : DOWN;
+			// Continue if remaining in current state
+				if(sys.state != DOWN) break;
+			// Assert Outputs
+				rcOutputs(DISABLED);
+				sys.statusLEDs = ENABLED; //DISABLED;
+				uartIntConfig(DISABLED);
+			// Configure for next loop and continue
+				// rfmIntConfig(ENABLED,noiseFloor);
+				wdtIntConfig(DISABLED,0);
+				systemSleep(9);
 			break;
 		case SLEEP:
-			transmitELT();
-			
-			
-			if(rfmIntList&(1<<(1))){ // We've Received a Valid Packet, either bind or normal LRS
-				uint8_t firstByte = radioReadReg(0x7F);
-				if(firstByte&(1<<7)) stateFlags.systemState = BEACON;
-				else stateFlags.systemState = ACTIVE; //(1<<(6+8)) For Preamble
-			} else if(rfmIntList&(1<<(4+8))){ // Otherwise, Check for RSSI
-				stateFlags.systemState = BEACON;
-			} else stateFlags.systemState = (stateFlags.batteryState)? SLEEP : DOWN;
-			
-			radioWriteReg(0x05, (1<<1)); // Enable Valid Packet Received Interrupt
-			radioWriteReg(0x06, (1<<4)); // Enable RSSI Interrupt
-			radioWriteReg(0x27, (noiseFloor+60)); // Configure RSSI for +30dBm Level Threshold
-			
-			
-			
-			uint8_t tempReg = WDTCSR;
-			tempReg |= _BV(WDIE);
-			WDTCSR |= (1<<WDCE)|(1<<WDE);
-			WDTCSR = tempReg;
-			
-			EICRA = 0;
-			EIMSK = (1<<INT1); //|(1<<INT0);
-			
-			systemSleep(8);
+			// Refresh information
+				updateVolts(0);
+				rfmIntList = 0; //rfmReadIntrpts();
+			// Determine nextState using refreshed information
+				if(rfmIntList&RFM_INT_VALID_PACKET_RX){
+					// rfmReadFIFO(rfmFIFO);
+					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
+					// else sys.state = ACTIVE;
+				} else sys.state = (sys.batteryState)? SLEEP : DOWN;
+			// Continue if remaining in current state
+				if(sys.state != SLEEP) break;
+			// Assert Outputs
+				rcOutputs(DISABLED);
+				sys.statusLEDs = ENABLED; //DISABLED;
+				uartIntConfig(DISABLED);
+				transmitELT();
+			// Configure for next loop and continue
+				// rfmIntConfig(ENABLED,noiseFloor);
+				wdtIntConfig(ENABLED,9);
+				systemSleep(9);
 			break;
 		case BEACON:
-			transmitELT();
-			
-			
-			if(rfmIntList&(1<<(1))){ // We've Received a Valid Packet, either bind or normal LRS
-				uint8_t firstByte = radioReadReg(0x7F);
-				if(firstByte&(1<<7)) stateFlags.systemState = BEACON;
-				else stateFlags.systemState = ACTIVE; //(1<<(6+8)) For Preamble
-			} else if(rfmIntList&(1<<(4+8))){ // Otherwise, Check for RSSI
-				stateFlags.systemState = BEACON;
-			} else stateFlags.systemState = (stateFlags.batteryState)? SLEEP : DOWN;
-			
-			stateFlags.systemState = (stateFlags.powerState)? BEACON : SLEEP;
+				wdtIntConfig(ENABLED,9);
+			// Refresh information
+				updateVolts(1);
+				rfmIntList = 0; //rfmReadIntrpts();
+				_delay_ms(2);
+			// Determine nextState using refreshed information
+				if(rfmIntList&RFM_INT_VALID_PACKET_RX){
+					// rfmReadFIFO(rfmFIFO);
+					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
+					// else sys.state = ACTIVE;
+				} else sys.state = (eltTransmitCount > 20)? SLEEP : BEACON;
+			// Continue if remaining in current state
+				if(sys.state != BEACON){
+					eltTransmitCount = 0;
+					break;
+				}
+				eltTransmitCount += 1;
+			// Assert Outputs
+				rcOutputs((sys.powerState)? ENABLED : DISABLED);
+				sys.statusLEDs = ENABLED; //(sys.powerState)? ENABLED : DISABLED;
+				uartIntConfig(DISABLED);
+				transmitELT();
+				
+			// Configure for next loop and continue
+				_delay_ms(30);
 			break;
 		case ACTIVE:
-			
+			// Refresh information
+				if(sys.intSrc.wdt){
+					hopGlitchCount = 0;
+					sys.intSrc.wdt = 0;
+				}
+			// Determine nextState using refreshed information
+				if(hopGlitchCount > 10){ // 10 Misses in 20 hops (Fix this)
+					failsafeCounter = 0;
+					updateVolts(1); // Very Dangerous. Perhaps just checking for the powerState component?
+					sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
+				} else sys.state = ACTIVE;
+			// Continue if remaining in current state
+				if(sys.state != ACTIVE) break;
+			// Assert Outputs
+				rcOutputs(ENABLED);
+				sys.statusLEDs = ENABLED;
+			// Configure for next loop and continue
+				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
+				// Insert Timer0 Coder here later
 			break;
 		case FAILSAFE:
-			
+			// Refresh information
+				if(sys.intSrc.wdt){
+					failsafeCounter += 1;
+					updateVolts(1);
+					sys.intSrc.wdt = 0;
+				}
+			// Determine nextState using refreshed information
+				if(failsafeCounter > 40) sys.state = (sys.powerState)? BEACON : SLEEP;
+			// Continue if remaining in current state
+				if(sys.state != FAILSAFE) break;
+			// Assert Outputs
+				rcOutputs(ENABLED);
+				sys.statusLEDs = ENABLED;
+			// Configure for next loop and continue
+				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
 			break;
 		default:
-			stateFlags.systemState = FAILSAFE;
+			sys.state = FAILSAFE;
+			// Refresh information
+			// Determine nextState using refreshed information
+			// Continue if remaining in current state
+			// Assert Outputs
+			// Configure for next loop and continue
 			
 	}
-	
-	
-	
 
 	
 	LED_OR = LOW;
+}
+
+void rcOutputs(uint8_t mode){
+	// Nothing yet
+}
+
+void uartIntConfig(uint8_t mode){
+	if(mode == ENABLED){
+		PCICR = (1<<PCIE2);
+		PCMSK2 = (1<<PCINT16);
+	} else{
+		PCICR = 0; //(1<<PCIE2);
+		PCMSK2 = 0; //(1<<PCINT16);
+	}
+}
+
+void wdtIntConfig(uint8_t mode, uint8_t interval){
+	uint8_t value = (uint8_t)( _BV(WDIE) | _BV(WDE) | (interval & 0x08? (1<<WDP3): 0x00) | (interval & 0x07) );
+	if(mode){
+		WDTCSR |= (1<<WDCE)|(1<<WDE);
+		WDTCSR = value;
+	} else{
+		WDTCSR |= (1<<WDCE)|(1<<WDE);
+		WDTCSR = 0;
+	}
+}
+
+void rfmIntConfig(uint8_t mode, uint8_t noiseFloor){
+	if(mode == ENABLED){
+		radioWriteReg(0x05, (1<<1)); // Enable Valid Packet Received Interrupt
+		radioWriteReg(0x06, (1<<4)); // Enable RSSI Interrupt
+		radioWriteReg(0x27, (noiseFloor+60)); // Configure RSSI for +30dBm Level Threshold
+		EICRA = 0;
+		EIMSK = (1<<INT0); //|(1<<INT0);
+	} else{
+		radioWriteReg(0x05, 0);
+		radioWriteReg(0x06, 0);
+		EIMSK = 0;
+	}
 }
 
 void printRegisters(void){
@@ -491,10 +584,11 @@ uint8_t systemSleep(uint8_t interval){
 	power_all_disable();
 	
 	//wdt_reset();
-	//uint8_t value = (uint8_t)( ((configFlags.wdtSlpEn)<<WDIE) | (interval & 0x08? (1<<WDP3): 0x00) | (interval & 0x07) );
+	// uint8_t value = (uint8_t)( ((configFlags.wdtSlpEn)<<WDIE) | (interval & 0x08? (1<<WDP3): 0x00) | (interval & 0x07) );
+	uint8_t value = (uint8_t)( (WDTCSR &(_BV(WDIE) | _BV(WDE))) | (interval & 0x08? (1<<WDP3): 0x00) | (interval & 0x07) );
 	MCUSR = 0;
 	WDTCSR |= (1<<WDCE)|(1<<WDE);
-	WDTCSR = _BV(WDIE) | _BV(WDE) | _BV(WDP3) | _BV(WDP0);
+	WDTCSR = value; //_BV(WDIE) | _BV(WDE) | _BV(WDP3) | _BV(WDP0);
 	
 	// PCMSK2 = (1<<PCINT16);
 	// PCICR = (1<<PCIE2);
@@ -503,8 +597,8 @@ uint8_t systemSleep(uint8_t interval){
 	// EIMSK = (1<<INT1); //|(1<<INT0);
 	
 	
-	// if(stateFlags.systemState == DOWN)			set_sleep_mode(SLEEP_MODE_PWR_DOWN);
-	// else if(stateFlags.systemState == SLEEP) 	set_sleep_mode(SLEEP_MODE_STANDBY);
+	// if(sys.state == DOWN)			set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+	// else if(sys.state == SLEEP) 	set_sleep_mode(SLEEP_MODE_STANDBY);
 	// else										set_sleep_mode(SLEEP_MODE_IDLE);
 	set_sleep_mode(SLEEP_MODE_PWR_DOWN);
 	sleep_enable();
@@ -536,6 +630,10 @@ uint8_t atMegaInit(void){
 	PRR = 0;
 
 	// Timers
+	TCCR0B = (1<<CS02)|(1<<CS00); 
+	OCR0A = 156; // 10 ms
+	TIMSK0 = (1<<OCIE0A);
+	
 	TCCR1A = _BV(COM1A1)|_BV(WGM11)|_BV(WGM13);
 	TCCR1B = (1<<CS12); //(1<<CS11)|(1<<CS10); //
 	ICR1 = 0xFFFF;
@@ -717,6 +815,18 @@ uint8_t radioReadRSSI(void){
 	return radioReadReg(0x26);
 }
 
+void rfmReadFIFO(uint8_t *array){
+	for(uint8_t i=0; i<16; i++){
+		array[i] = radioReadReg(0x7F);
+	}
+}
+
+uint16_t rfmReadIntrpts(void){
+	uint16_t rfmIntList = radioReadReg(0x03);
+	rfmIntList |= radioReadReg(0x04)<<8;
+	return rfmIntList;
+}
+
 void transmitELT(void){
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
 	_delay_ms(1);
@@ -800,7 +910,7 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	}
 }
 
-void updateVolts(void){
+void updateVolts(uint8_t fastMode){
 	uint16_t lipoly = 0; // An array or struct would be more condusive?
 	uint16_t sysVin = 0;
 	uint16_t atMegaVolt = 0;
@@ -810,7 +920,7 @@ void updateVolts(void){
 		lipoly += readADC(ADC_VBAT);
 		sysVin += readADC(ADC_VIN);
 		for(uint8_t i=0; i<4; i++) readADC(ADC_VSYS); // Pre-heat the VSYS ADC Input
-		atMegaVolt += readAdcNoiseReduced(ADC_VSYS); // [4092:0]
+		atMegaVolt += (fastMode)? readADC(ADC_VSYS) : readAdcNoiseReduced(ADC_VSYS); // [4092:0]
 	}
 	lipoly >>= 2; // [1023:0]
 	sysVin >>= 2;
@@ -842,8 +952,8 @@ void updateVolts(void){
 	sysVin = (uint16_t)( (uint32_t)( (uint32_t)sysVin * (uint32_t)atMegaVolt ) >> 9 );
 	lipoly = (uint16_t)( (uint32_t)( (uint32_t)lipoly * (uint32_t)atMegaVolt ) >> 9 );
 	
-	stateFlags.powerState = (sysVin > VIN_CUTOFF)? 1 : 0;
-	stateFlags.batteryState = (lipoly > LIPOLY_CUTOFF)? 1 : 0;
+	sys.powerState = (sysVin > VIN_CUTOFF)? 1 : 0;
+	sys.batteryState = (lipoly > LIPOLY_CUTOFF)? 1 : 0;
 	
 	// printf("Lipoly: %u\tVoltIn: %u\tATmega: %u\n",lipoly,sysVin,atMegaVolt);
 	
