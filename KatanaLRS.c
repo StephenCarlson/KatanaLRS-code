@@ -207,6 +207,9 @@ static uint16_t beaconNotes[BEACON_NOTES][3] = {{1136,704,7},{902,222,4},{758,26
 //	TxPwr	7		4		3		2		1		0
 //	In dBm	+20		+11		+8		+5		+2		+1
 //	In mW	100		12.6	6.3		3.2		1.6		1.3
+//	Actual	438.7	552.4	656.0	584.9	735.5	874.1 // With -66 uS already asserted
+//	uS/2	1067	833		684		782		605		498
+//	cycles	704		222		264		235		296		352 // Keep Cycle counts tied to actual periods, not corrected ones
 
 static struct{
 	uint8_t sleepInterval:3;
@@ -367,6 +370,7 @@ void loop(void){
 	
 	
 	//if(sys.intSrc.wdt){
+		_delay_ms(1);
 		printf("State: %s\tLipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\n",
 			(sys.state == 0)? "DOWN" :(sys.state == 1)? "SLEEP" :(sys.state == 2)? "BEACON" :
 			(sys.state == 3)? "ACTIVE" : "FAILSAFE",volt.lipoly,volt.sysVin,volt.atMega,noiseFloor);
@@ -577,8 +581,8 @@ uint8_t systemSleep(uint8_t interval){
 	DIDR1 = (1<<AIN1D)|(1<<AIN0D);
 	UCSR0B =0;
 	TCCR1B = 0;
-	PORTB = PORTC = PORTD = 0; // 
 	DDRB = DDRC = DDRD = 0;
+	PORTB = PORTC = PORTD = 0; // May want to comment this out to clean up waveforms
 	
 	//MPU_VLOGIC = LOW;
 	power_all_disable();
@@ -641,10 +645,13 @@ uint8_t atMegaInit(void){
 	// IO Ports
 	// 0: Input (Hi-Z) 1: Output
 	//        76543210		7		6		5		4		3		2		1		0
-	DDRB |= 0b00101111; //	XTAL2	XTAL1	SCK		MISO	MOSI	CS_RFM	LED_BL	LED_OR
-    DDRC |= 0b00001111; //	--		Reset	SCL		SDA		P4		P3		P2		P1
-    DDRD |= 0b00000010; //	P8		P7		P6		P5		RFM_PBL	RF_INT	TXD		RXD
-	// PORTC |=0b00000000;
+	PORTB |=0b00000100;	//	XTAL2	XTAL1	SCK		MISO	MOSI	CS_RFM	LED_BL	LED_OR
+	PORTC |=0b00000000;	//	--		Reset	SCL		SDA		P4		P3		P2		P1
+	PORTD |=0x00000010;	//	P8		P7		P6		P5		RFM_PBL	RF_INT	TXD		RXD
+	DDRB |= 0b00101111;	
+    DDRC |= 0b00000000;	
+    DDRD |= 0b00000010;	
+
 	
 	// Serial Port
 	UBRR0H = UART_UBRR >> 8;
@@ -840,23 +847,23 @@ void transmitELT_Beacon(void){
 	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
 		radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
 		//printf("Fail on Preset: Beacon\n");
-		_delay_ms(2);
+		//_delay_ms(2);
 	}
 	
 	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
 	radioWriteReg(0x72, 7);		// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
 	
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
-	_delay_ms(1);
+	//_delay_ms(1);
 	
 	for(uint8_t n=0; n<BEACON_NOTES; n++){
 		radioWriteReg(0x6D, beaconNotes[n][2]);
-		_delay_ms(2);
+		_delay_ms(1);
 		SPCR = 0;
 		CS_RFM = HIGH;
 		for(uint16_t d=0; d<beaconNotes[n][1]; d++){
 			FORCE_MOSI = d&0x01;
-			_delay_us(beaconNotes[n][0]-66); // Getting 416 Hz A4 w/o correction, means its adding 66 uS
+			_delay_us(beaconNotes[n][0]); // Getting 416 Hz A4 w/o correction, means its adding 66 uS 
 		}
 		SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR0);
 	}
@@ -866,7 +873,7 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	
 	
 	radioWriteReg(0x08,0x01);		// FIFO Clear Sequence
-	_delay_ms(1);					
+	//_delay_ms(1);					
 	radioWriteReg(0x08,0x00);		
 	radioWriteReg(0x71, 0x23);		// GFSK, FIFO Used
 	radioWriteReg(0x72, 20);		// ~20kHz Peak-Peak Deviation
@@ -875,7 +882,7 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
 		radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
 		// printf("Fail on Preset: Packet\n");
-		_delay_ms(2);
+		_delay_ms(1);
 	}
 	
 	//		FCC ID, Lat, Long, UTC Fix, # Sat's, HDOP, Altitude, LiPoly, System In, AtMega
