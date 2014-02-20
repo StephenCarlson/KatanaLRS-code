@@ -106,6 +106,15 @@ typedef struct{
 #define LED_BL		REGISTER_BIT(PORTB,1)
 #define CS_RFM		REGISTER_BIT(PORTB,2)
 #define FORCE_MOSI	REGISTER_BIT(PORTB,3)
+#define CHANNELS	8
+#define PWM_1		REGISTER_BIT(PORTC,0)
+#define PWM_2		REGISTER_BIT(PORTC,1)
+#define PWM_3		REGISTER_BIT(PORTC,2)
+#define PWM_4		REGISTER_BIT(PORTC,3)
+#define PWM_5		REGISTER_BIT(PORTD,4)
+#define PWM_6		REGISTER_BIT(PORTD,5)
+#define PWM_7		REGISTER_BIT(PORTD,6)
+#define PWM_8		REGISTER_BIT(PORTD,7)
 #define RFM_INT		(!(PIND &(1<<2)))
 #define RFM_PMBL	(PIND &(1<<3))
 #define ADC_VBAT	6 // For ADC Read Channel Selection
@@ -172,6 +181,10 @@ static char dataBufferA[BUFFER_SIZE]; //volatile
 
 static volatile uint16_t hopGlitchCount = 0;
 
+static volatile uint8_t ch;
+static volatile uint16_t pwmValues[CHANNELS] = {1500,1300,1000,1200,1800,1900,1100,1450};
+static volatile uint16_t pwmFrameSum;
+
 static struct{
 	uint16_t ch1:10;
 	uint16_t ch2:10;
@@ -197,7 +210,7 @@ static struct{
 } gps;
 
 #define BEACON_NOTES 6
-static uint16_t beaconNotes[BEACON_NOTES][3] = {{1136,704,7},{902,222,4},{758,264,3},{851,235,2},{675,296,1},{568,352,0}};
+static const uint16_t beaconNotes[BEACON_NOTES][3] = {{1067,704,7},{833,222,4},{684,264,3},{782,235,2},{605,296,1},{498,352,0}};
 //	Note	A4		C#5 	E5 		D5 		F#5 	A5
 //	Freq	440		554.4	659.3	587.3	740		880
 //	uS		2273	1804	1517	1703	1351    1136
@@ -208,7 +221,7 @@ static uint16_t beaconNotes[BEACON_NOTES][3] = {{1136,704,7},{902,222,4},{758,26
 //	In dBm	+20		+11		+8		+5		+2		+1
 //	In mW	100		12.6	6.3		3.2		1.6		1.3
 //	Actual	438.7	552.4	656.0	584.9	735.5	874.1 // With -66 uS already asserted
-//	uS/2	1067	833		684		782		605		498
+//	uS/2	1067	833		684		782		605		498 // 684 and 498 are slightly sharp and flat, respective
 //	cycles	704		222		264		235		296		352 // Keep Cycle counts tied to actual periods, not corrected ones
 
 static struct{
@@ -264,6 +277,84 @@ ISR(TIMER0_COMPA_vect){
 	hopGlitchCount += 1;
 }
 
+ISR(TIMER2_COMPA_vect){ // Explicitly Sloppy until sequence nail down, optimize later
+	TCNT2 = 1;
+	switch(ch){
+		case 0:
+			PWM_1 = HIGH;
+			OCR2A = pwmValues[ch]>>3;
+			ch+=1;
+			pwmFrameSum = pwmValues[ch]>>3;
+			break;
+		case 1:
+			PWM_1 = LOW;
+			PWM_2 = HIGH;
+			OCR2A = pwmValues[ch]>>3;
+			ch+=1;
+			pwmFrameSum += pwmValues[ch]>>3;
+			break;
+		case 2:
+			PWM_2 = LOW;
+			PWM_3 = HIGH;
+			OCR2A = pwmValues[ch]>>3;
+			ch+=1;
+			pwmFrameSum += pwmValues[ch]>>3;
+			break;
+		case 3:
+			PWM_3 = LOW;
+			PWM_4 = HIGH;
+			OCR2A = pwmValues[ch]>>3;
+			ch+=1;
+			pwmFrameSum += pwmValues[ch]>>3;
+			break;
+		case 4:
+			PWM_4 = LOW;
+			PWM_5 = HIGH;
+			OCR2A = pwmValues[ch]>>3;
+			ch+=1;
+			pwmFrameSum += pwmValues[ch]>>3;
+			break;
+		case 5:
+			PWM_5 = LOW;
+			PWM_6 = HIGH;
+			OCR2A = pwmValues[ch]>>3;
+			ch+=1;
+			pwmFrameSum += pwmValues[ch]>>3;
+			break;
+		case 6:
+			PWM_6 = LOW;
+			PWM_7 = HIGH;
+			OCR2A = pwmValues[ch]>>3;
+			ch+=1;
+			pwmFrameSum += pwmValues[ch]>>3;
+			break;
+		case 7:
+			PWM_7 = LOW;
+			PWM_8 = HIGH;
+			OCR2A = pwmValues[ch]>>3;
+			ch+=1;
+			pwmFrameSum += pwmValues[ch]>>3;
+			// printf("Sum: %u\n",pwmFrameSum); Getting 14000
+			break;
+		case 8:
+			PORTC &= ~(0x0F);
+			PORTD &= ~(0xF0);
+			if((pwmFrameSum+25) > 2500){
+				pwmFrameSum = 0;
+				ch = 0;
+			} else{
+				pwmFrameSum += 25;
+				ch = 8;
+			}
+			OCR2A = 25;
+			//TIMSK2 = 0;
+			break;
+		default:
+			TIMSK2 = 0; //ch = 8;
+	}
+	// ch = ((ch >= CHANNELS) && )? 0 : ch+1;
+}
+
 ISR(USART_RX_vect){
 	sys.intSrc.uart = 1;
 	sys.monitorMode = 0;
@@ -315,6 +406,7 @@ void setup(void){
 	uint8_t startStatus = atMegaInit();
 	sys.state = ACTIVE;
 	
+	// Restart Peripherals
 	for(uint8_t i=0; i<5; i++){
 		radioWriteReg(0x07, 0x80);		// Reset the Chip
 		_delay_ms(10);
@@ -323,7 +415,6 @@ void setup(void){
 		if((radioReadReg(0x05)&0x02) == 0x02) break;
 		_delay_ms(1);
 	}
-	
 	radioMode(ACTIVE);
 	
 	// Tasks and Routines
@@ -349,6 +440,12 @@ void setup(void){
 	
 	*((uint8_t*) &configFlags) = eeprom_read_byte((const uint8_t*) EEPROM_START);
 	
+	// Application Warm-up
+	// for(uint8_t i=0; i<CHANNELS; i++){
+		// pwmValues[i] = 1000;
+	// }
+	TIMSK2 = (1<<OCIE2A);
+	
 	// Console Usage Hints
 	printHelpInfo();
 }
@@ -369,13 +466,14 @@ void loop(void){
 	
 	
 	
-	//if(sys.intSrc.wdt){
+	if(sys.intSrc.wdt){ // Wow! Race Condition! Should only check this in a single function
+		sys.intSrc.wdt = 0;
 		_delay_ms(1);
 		printf("State: %s\tLipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\n",
 			(sys.state == 0)? "DOWN" :(sys.state == 1)? "SLEEP" :(sys.state == 2)? "BEACON" :
 			(sys.state == 3)? "ACTIVE" : "FAILSAFE",volt.lipoly,volt.sysVin,volt.atMega,noiseFloor);
 
-	//}
+	}
 		
 	// Carry out the current State processes and determine next state
 	switch(sys.state){ // Native State Machine
@@ -433,7 +531,7 @@ void loop(void){
 					// rfmReadFIFO(rfmFIFO);
 					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
 					// else sys.state = ACTIVE;
-				} else sys.state = (eltTransmitCount > 20)? SLEEP : BEACON;
+				} else sys.state = (eltTransmitCount > 10)? SLEEP : BEACON;
 			// Continue if remaining in current state
 				if(sys.state != BEACON){
 					eltTransmitCount = 0;
@@ -451,12 +549,12 @@ void loop(void){
 			break;
 		case ACTIVE:
 			// Refresh information
-				if(sys.intSrc.wdt){
-					hopGlitchCount = 0;
-					sys.intSrc.wdt = 0;
-				}
+				// if(sys.intSrc.wdt){ // These should be a separate timer, no WDT
+					// hopGlitchCount = 0;
+					// sys.intSrc.wdt = 0;
+				// }
 			// Determine nextState using refreshed information
-				if(hopGlitchCount > 10){ // 10 Misses in 20 hops (Fix this)
+				if(0){ //hopGlitchCount > 10){ // 10 Misses in 20 hops (Fix this)
 					failsafeCounter = 0;
 					updateVolts(1); // Very Dangerous. Perhaps just checking for the powerState component?
 					sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
@@ -472,13 +570,13 @@ void loop(void){
 			break;
 		case FAILSAFE:
 			// Refresh information
-				if(sys.intSrc.wdt){
-					failsafeCounter += 1;
-					updateVolts(1);
-					sys.intSrc.wdt = 0;
-				}
+				// if(sys.intSrc.wdt){ // These should be a separate timer, no WDT
+					// failsafeCounter += 1;
+					// updateVolts(1);
+					// sys.intSrc.wdt = 0;
+				// }
 			// Determine nextState using refreshed information
-				if(failsafeCounter > 40) sys.state = (sys.powerState)? BEACON : SLEEP;
+				if(failsafeCounter > 10) sys.state = (sys.powerState)? BEACON : SLEEP;
 			// Continue if remaining in current state
 				if(sys.state != FAILSAFE) break;
 			// Assert Outputs
@@ -502,7 +600,7 @@ void loop(void){
 }
 
 void rcOutputs(uint8_t mode){
-	// Nothing yet
+	TIMSK2 = (mode)? (1<<OCIE2A) : 0;
 }
 
 void uartIntConfig(uint8_t mode){
@@ -634,7 +732,7 @@ uint8_t atMegaInit(void){
 	PRR = 0;
 
 	// Timers
-	TCCR0B = (1<<CS02)|(1<<CS00); 
+	TCCR0B = (1<<CS02)|(1<<CS00); // clk/1024
 	OCR0A = 156; // 10 ms
 	TIMSK0 = (1<<OCIE0A);
 	
@@ -642,15 +740,21 @@ uint8_t atMegaInit(void){
 	TCCR1B = (1<<CS12); //(1<<CS11)|(1<<CS10); //
 	ICR1 = 0xFFFF;
 	
+	// TCCR2A = 
+	TCCR2B = _BV(CS22)|_BV(CS20); // clk/128
+	OCR2A = 125; // 1.0 ms
+	// TIMSK2 = (1<<OCIE2A);
+	
+	
 	// IO Ports
 	// 0: Input (Hi-Z) 1: Output
 	//        76543210		7		6		5		4		3		2		1		0
 	PORTB |=0b00000100;	//	XTAL2	XTAL1	SCK		MISO	MOSI	CS_RFM	LED_BL	LED_OR
-	PORTC |=0b00000000;	//	--		Reset	SCL		SDA		P4		P3		P2		P1
-	PORTD |=0x00000010;	//	P8		P7		P6		P5		RFM_PBL	RF_INT	TXD		RXD
+	PORTC |=0b00001111;	//	--		Reset	SCL		SDA		P4		P3		P2		P1
+	PORTD |=0x11110010;	//	P8		P7		P6		P5		RFM_PBL	RF_INT	TXD		RXD
 	DDRB |= 0b00101111;	
-    DDRC |= 0b00000000;	
-    DDRD |= 0b00000010;	
+    DDRC |= 0b00001111;	
+    DDRD |= 0b11110010;	
 
 	
 	// Serial Port
