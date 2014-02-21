@@ -311,7 +311,6 @@ ISR(TIMER1_OVF_vect ){ // May want to redo as if/else structure, more efficient?
 			PWM_6 = LOW;
 			PWM_7 = HIGH;
 			ICR1 = pwmValues[ch]<<1;
-			//TIMSK1 |= _BV(OCIE1A);
 			ch+=1;
 			pwmFrameSum += pwmValues[ch];
 			break;
@@ -395,9 +394,9 @@ void setup(void){
 	// Restart Peripherals											// ~105 ms
 	for(uint8_t i=0; i<5; i++){
 		radioWriteReg(0x07, 0x80);		// Reset the Chip
-		_delay_ms(1);
+		_delay_ms(10);
 	}
-	for(uint8_t i=0; i<100; i++){
+	for(uint8_t i=0; i<200; i++){
 		if((radioReadReg(0x05)&0x02) == 0x02) break;
 		_delay_ms(1);
 	}
@@ -420,7 +419,7 @@ void setup(void){
 	if(deviceIdCheck()){
 		printf("OK\n");
 		// transmitELT();
-		transmitELT_Packet();										// ~100 ms
+		// transmitELT_Packet();										// ~100 ms
 	} else{
 		printf("FAILED!\n");
 	}	
@@ -585,17 +584,17 @@ void loop(void){
 void rcOutputs(uint8_t mode){
 	TIMSK1 = (mode)? _BV(TOIE1) : 0;
 	
-	if(mode){
-		DDRC |= 0x0F;
-		DDRD |= 0xF0;
-		PORTC |=0x0F;
-		PORTD |=0xF0;
-	} else{
-		DDRC &= ~(0x0F);
-		DDRD &= ~(0xF0);
-		PORTC &= ~(0x0F);
-		PORTD &= ~(0xF0);
-	}
+	// if(mode){
+		// DDRC |= 0x0F;
+		// DDRD |= 0xF0;
+		// PORTC |=0x0F;
+		// PORTD |=0xF0;
+	// } else{
+		// DDRC &= ~(0x0F);
+		// DDRD &= ~(0xF0);
+		// PORTC &= ~(0x0F);
+		// PORTD &= ~(0xF0);
+	// }
 }
 
 void uartIntConfig(uint8_t mode){
@@ -732,10 +731,10 @@ uint8_t atMegaInit(void){
 	TIMSK0 = (1<<OCIE0A);
 	
 	
-	TCCR1A = _BV(COM1A1)|_BV(WGM11);
+	TCCR1A = _BV(WGM11); //_BV(COM1A1)|
 	TCCR1B = _BV(WGM13)|_BV(WGM12)|(1<<CS11);
 	ICR1 = 50000; // 25 ms
-	OCR1A = 0; //800; // 400 uS
+	OCR1A = 800; // 400 uS
 	
 	// TCCR2A = 
 	// TCCR2B = _BV(CS22)|_BV(CS20); // clk/128
