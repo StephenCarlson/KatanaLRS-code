@@ -45,7 +45,7 @@ for i in range(0,length): #len(a)):
 	
 
 
-baudrate = 9600.0 #9143.0 # Increase Slightly Some more 9183.0 #
+baudrate = 4800.0 #9600.0 #9143.0 # Increase Slightly Some more 9183.0 #
 period = 1/baudrate
 sampleDelta = 1/framerate
 

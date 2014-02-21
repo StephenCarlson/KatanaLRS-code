@@ -394,7 +394,7 @@ void setup(void){
 	// Restart Peripherals											// ~105 ms
 	for(uint8_t i=0; i<5; i++){
 		radioWriteReg(0x07, 0x80);		// Reset the Chip
-		_delay_ms(10);
+		_delay_ms(1);
 	}
 	for(uint8_t i=0; i<200; i++){
 		if((radioReadReg(0x05)&0x02) == 0x02) break;
@@ -414,6 +414,8 @@ void setup(void){
 	
 	flashOrangeLED(5,10,40); 										// 250 ms
 	sys.monitorMode = 1;
+	
+	updateVolts(0);
 	
 	printf("Device ID Check: ");
 	if(deviceIdCheck()){
@@ -900,6 +902,7 @@ void radioWriteReg(uint8_t regAddress, uint8_t regValue){
 		transferSPI((RFM_WRITE<<7) | regAddress);
 		transferSPI(regValue);
 	CS_RFM = HIGH;
+	_delay_us(1);
 }
 
 uint8_t radioReadReg(uint8_t regAddress){
@@ -907,6 +910,7 @@ uint8_t radioReadReg(uint8_t regAddress){
 		transferSPI(regAddress);
 		uint8_t value = transferSPI(0x00);
 	CS_RFM = HIGH;
+	_delay_us(1);
 	return value;
 }
 
@@ -951,6 +955,9 @@ uint16_t rfmReadIntrpts(void){
 }
 
 void transmitELT(void){
+	radioWriteReg(0x75, 0x53);
+	radioWriteReg(0x76, 0x64);
+	radioWriteReg(0x77, 0x00);
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
 	_delay_ms(1);
 	transmitELT_Packet(); // Want to send packet before battery sags in worst case
@@ -977,6 +984,7 @@ void transmitELT_Beacon(void){
 		_delay_ms(1);
 		SPCR = 0;
 		CS_RFM = HIGH;
+		_delay_us(1);
 		for(uint16_t d=0; d<beaconNotes[n][1]; d++){
 			FORCE_MOSI = d&0x01;
 			_delay_us(beaconNotes[n][0]); // Getting 416 Hz A4 w/o correction, means its adding 66 uS 
@@ -1021,6 +1029,7 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 			//if(i == BUFFER_SIZE) printf("Fail on String\n");
 		}
 	CS_RFM = HIGH;
+	_delay_us(1);
 	
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
 
