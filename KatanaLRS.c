@@ -264,19 +264,7 @@ ISR(WDT_vect){
 	sys.intSrc.wdt = 1;
 }
 
-// ISR(TIMER1_CAPT_vect){
-	
-// }
-
-// ISR(TIMER1_COMPA_vect){
-	// LED_OR = HIGH;
-	// _delay_us(2);
-	// if(ch == 8) TCCR1A &= ~_BV(COM1A1);
-	// if(ch == 0) TCCR1A |= _BV(COM1A1);
-	// // TIMSK1 &= ~_BV(OCIE1A);
-// }
-
-ISR(TIMER1_OVF_vect ){ //TIMER1_COMPB_vect){ // Explicitly Sloppy until sequence nail down, optimize later
+ISR(TIMER1_OVF_vect ){ // May want to redo as if/else structure, more efficient?
 	switch(ch){
 		case 0:
 			PWM_1 = HIGH;
@@ -338,29 +326,14 @@ ISR(TIMER1_OVF_vect ){ //TIMER1_COMPB_vect){ // Explicitly Sloppy until sequence
 		case 8:
 			PORTC &= ~(0x0F);
 			PORTD &= ~(0xF0);
-			ch = 0;
 			ICR1 = (20000 - pwmFrameSum)<<1;
-			// TIMSK1 |= _BV(OCIE1A);
-			// if(pwmFrameSum < 20000){
-				// pwmFrameSum = 0;
-				// ch = 0;
-				// ICR1 = (20000 - pwmFrameSum)<<1;
-				// TIMSK1 |= _BV(OCIE1A);
-				// // TCCR1A |= _BV(COM1A1);
-			// } else{
-				// pwmFrameSum += 30000;
-				// ch = 8;
-				// TCCR1A &= ~_BV(COM1A1);
-				// ICR1 = 30000<<1;
-			// }
+			ch = 0;
 			OCR1A = 800;
 			TCCR1A |= _BV(COM1A1);
-			// TIMSK1 |= _BV(OCIE1A);
 			break;
 		default:
 			ch = 8;
 	}
-	// ch = ((ch >= CHANNELS) && )? 0 : ch+1;
 }
 
 ISR(TIMER0_COMPA_vect){
@@ -416,15 +389,15 @@ int main(void){
 }
 
 void setup(void){
-	uint8_t startStatus = atMegaInit();
+	uint8_t startStatus = atMegaInit();								// 
 	sys.state = ACTIVE;
 	
-	// Restart Peripherals
+	// Restart Peripherals											// ~105 ms
 	for(uint8_t i=0; i<5; i++){
 		radioWriteReg(0x07, 0x80);		// Reset the Chip
-		_delay_ms(10);
+		_delay_ms(1);
 	}
-	for(uint8_t i=0; i<0xFF; i++){
+	for(uint8_t i=0; i<100; i++){
 		if((radioReadReg(0x05)&0x02) == 0x02) break;
 		_delay_ms(1);
 	}
@@ -440,13 +413,14 @@ void setup(void){
 	printf("\n\n");
 	//	WDRF BORF EXTRF PORF
 	
-	flashOrangeLED(10,10,40);
+	flashOrangeLED(5,10,40); 										// 250 ms
 	sys.monitorMode = 1;
 	
 	printf("Device ID Check: ");
 	if(deviceIdCheck()){
 		printf("OK\n");
-		transmitELT();
+		// transmitELT();
+		transmitELT_Packet();										// ~100 ms
 	} else{
 		printf("FAILED!\n");
 	}	
@@ -454,10 +428,7 @@ void setup(void){
 	*((uint8_t*) &configFlags) = eeprom_read_byte((const uint8_t*) EEPROM_START);
 	
 	// Application Warm-up
-	// for(uint8_t i=0; i<CHANNELS; i++){
-		// pwmValues[i] = 1000;
-	// }
-	TIMSK1 = _BV(TOIE1);//(1<<OCIE1B);
+	TIMSK1 = _BV(TOIE1);
 	
 	// Console Usage Hints
 	printHelpInfo();
@@ -474,7 +445,6 @@ void loop(void){
 	#define DL_BIND_FLAG (1<<7)
 	
 	// Assert Concurrent Outputs (Outputs not tied to a FSM State, but merely from inputs)
-	// OCR1A = (sys.statusLEDs && sys.powerState)? (volt.lipoly-2800)<<5 : 0; //[3000:4200] -> [10k;60k]
 	if(sys.statusLEDs) LED_OR = HIGH; //flashOrangeLED(2,5,5); // Solve Delay timing issue
 	
 	
@@ -614,6 +584,18 @@ void loop(void){
 
 void rcOutputs(uint8_t mode){
 	TIMSK1 = (mode)? _BV(TOIE1) : 0;
+	
+	if(mode){
+		DDRC |= 0x0F;
+		DDRD |= 0xF0;
+		PORTC |=0x0F;
+		PORTD |=0xF0;
+	} else{
+		DDRC &= ~(0x0F);
+		DDRD &= ~(0xF0);
+		PORTC &= ~(0x0F);
+		PORTD &= ~(0xF0);
+	}
 }
 
 void uartIntConfig(uint8_t mode){
@@ -766,7 +748,7 @@ uint8_t atMegaInit(void){
 	//        76543210		7		6		5		4		3		2		1		0
 	PORTB |=0b00000100;	//	XTAL2	XTAL1	SCK		MISO	MOSI	CS_RFM	LED_BL	LED_OR
 	PORTC |=0b00001111;	//	--		Reset	SCL		SDA		P4		P3		P2		P1
-	PORTD |=0x11110010;	//	P8		P7		P6		P5		RFM_PBL	RF_INT	TXD		RXD
+	PORTD |=0b11110010;	//	P8		P7		P6		P5		RFM_PBL	RF_INT	TXD		RXD
 	DDRB |= 0b00101111;	
     DDRC |= 0b00001111;	
     DDRD |= 0b11110010;	
@@ -1027,7 +1009,7 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
 
-	for(uint8_t i=0; i<255; i++){
+	for(uint8_t i=0; i<200; i++){
 		if((radioReadReg(0x07)&0x08) == 0){
 			// printf("Break@ %u\n",i);
 			break;
