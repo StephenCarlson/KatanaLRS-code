@@ -182,7 +182,7 @@ static char dataBufferA[BUFFER_SIZE]; //volatile
 static volatile uint16_t hopGlitchCount = 0;
 
 static volatile uint8_t ch;
-static volatile uint16_t pwmValues[CHANNELS] = {1500,1300,1000,1200,1800,1900,1100,1450};
+static volatile uint16_t pwmValues[CHANNELS] = {1000,1000,1000,1000,1000,1000,1000,1000};
 static volatile uint16_t pwmFrameSum;
 
 static struct{
@@ -264,95 +264,108 @@ ISR(WDT_vect){
 	sys.intSrc.wdt = 1;
 }
 
+// ISR(TIMER1_CAPT_vect){
+	
+// }
+
 // ISR(TIMER1_COMPA_vect){
-	// sys.intSrc.timer0 = 1;
-	// hopGlitchCount += 1;
+	// LED_OR = HIGH;
+	// _delay_us(2);
+	// if(ch == 8) TCCR1A &= ~_BV(COM1A1);
+	// if(ch == 0) TCCR1A |= _BV(COM1A1);
+	// // TIMSK1 &= ~_BV(OCIE1A);
 // }
 
-// ISR(TIMER1_COMPB_vect){
-// }
-
-ISR(TIMER0_COMPA_vect){
-	sys.intSrc.timer0 = 1;
-	hopGlitchCount += 1;
-}
-
-ISR(TIMER2_COMPA_vect){ // Explicitly Sloppy until sequence nail down, optimize later
-	TCNT2 = 1;
+ISR(TIMER1_OVF_vect ){ //TIMER1_COMPB_vect){ // Explicitly Sloppy until sequence nail down, optimize later
 	switch(ch){
 		case 0:
 			PWM_1 = HIGH;
-			OCR2A = pwmValues[ch]>>3;
+			ICR1 = pwmValues[ch]<<1;
 			ch+=1;
-			pwmFrameSum = pwmValues[ch]>>3;
+			pwmFrameSum = pwmValues[ch]; // Note the subtle difference, =, not +=
 			break;
 		case 1:
 			PWM_1 = LOW;
 			PWM_2 = HIGH;
-			OCR2A = pwmValues[ch]>>3;
+			ICR1 = pwmValues[ch]<<1;
 			ch+=1;
-			pwmFrameSum += pwmValues[ch]>>3;
+			pwmFrameSum += pwmValues[ch];
 			break;
 		case 2:
 			PWM_2 = LOW;
 			PWM_3 = HIGH;
-			OCR2A = pwmValues[ch]>>3;
+			ICR1 = pwmValues[ch]<<1;
 			ch+=1;
-			pwmFrameSum += pwmValues[ch]>>3;
+			pwmFrameSum += pwmValues[ch];
 			break;
 		case 3:
 			PWM_3 = LOW;
 			PWM_4 = HIGH;
-			OCR2A = pwmValues[ch]>>3;
+			ICR1 = pwmValues[ch]<<1;
 			ch+=1;
-			pwmFrameSum += pwmValues[ch]>>3;
+			pwmFrameSum += pwmValues[ch];
 			break;
 		case 4:
 			PWM_4 = LOW;
 			PWM_5 = HIGH;
-			OCR2A = pwmValues[ch]>>3;
+			ICR1 = pwmValues[ch]<<1;
 			ch+=1;
-			pwmFrameSum += pwmValues[ch]>>3;
+			pwmFrameSum += pwmValues[ch];
 			break;
 		case 5:
 			PWM_5 = LOW;
 			PWM_6 = HIGH;
-			OCR2A = pwmValues[ch]>>3;
+			ICR1 = pwmValues[ch]<<1;
 			ch+=1;
-			pwmFrameSum += pwmValues[ch]>>3;
+			pwmFrameSum += pwmValues[ch];
 			break;
 		case 6:
 			PWM_6 = LOW;
 			PWM_7 = HIGH;
-			OCR2A = pwmValues[ch]>>3;
+			ICR1 = pwmValues[ch]<<1;
+			//TIMSK1 |= _BV(OCIE1A);
 			ch+=1;
-			pwmFrameSum += pwmValues[ch]>>3;
+			pwmFrameSum += pwmValues[ch];
 			break;
 		case 7:
 			PWM_7 = LOW;
 			PWM_8 = HIGH;
-			OCR2A = pwmValues[ch]>>3;
+			ICR1 = pwmValues[ch]<<1;
 			ch+=1;
-			pwmFrameSum += pwmValues[ch]>>3;
+			pwmFrameSum += pwmValues[ch];
 			// printf("Sum: %u\n",pwmFrameSum); Getting 14000
 			break;
 		case 8:
 			PORTC &= ~(0x0F);
 			PORTD &= ~(0xF0);
-			if((pwmFrameSum+25) > 2500){
-				pwmFrameSum = 0;
-				ch = 0;
-			} else{
-				pwmFrameSum += 25;
-				ch = 8;
-			}
-			OCR2A = 25;
-			//TIMSK2 = 0;
+			ch = 0;
+			ICR1 = (20000 - pwmFrameSum)<<1;
+			// TIMSK1 |= _BV(OCIE1A);
+			// if(pwmFrameSum < 20000){
+				// pwmFrameSum = 0;
+				// ch = 0;
+				// ICR1 = (20000 - pwmFrameSum)<<1;
+				// TIMSK1 |= _BV(OCIE1A);
+				// // TCCR1A |= _BV(COM1A1);
+			// } else{
+				// pwmFrameSum += 30000;
+				// ch = 8;
+				// TCCR1A &= ~_BV(COM1A1);
+				// ICR1 = 30000<<1;
+			// }
+			OCR1A = 800;
+			TCCR1A |= _BV(COM1A1);
+			// TIMSK1 |= _BV(OCIE1A);
 			break;
 		default:
-			TIMSK2 = 0; //ch = 8;
+			ch = 8;
 	}
 	// ch = ((ch >= CHANNELS) && )? 0 : ch+1;
+}
+
+ISR(TIMER0_COMPA_vect){
+	sys.intSrc.timer0 = 1;
+	hopGlitchCount += 1;
 }
 
 ISR(USART_RX_vect){
@@ -444,7 +457,7 @@ void setup(void){
 	// for(uint8_t i=0; i<CHANNELS; i++){
 		// pwmValues[i] = 1000;
 	// }
-	TIMSK2 = (1<<OCIE2A);
+	TIMSK1 = _BV(TOIE1);//(1<<OCIE1B);
 	
 	// Console Usage Hints
 	printHelpInfo();
@@ -461,7 +474,7 @@ void loop(void){
 	#define DL_BIND_FLAG (1<<7)
 	
 	// Assert Concurrent Outputs (Outputs not tied to a FSM State, but merely from inputs)
-	OCR1A = (sys.statusLEDs && sys.powerState)? (volt.lipoly-2800)<<5 : 0; //[3000:4200] -> [10k;60k]
+	// OCR1A = (sys.statusLEDs && sys.powerState)? (volt.lipoly-2800)<<5 : 0; //[3000:4200] -> [10k;60k]
 	if(sys.statusLEDs) LED_OR = HIGH; //flashOrangeLED(2,5,5); // Solve Delay timing issue
 	
 	
@@ -600,7 +613,7 @@ void loop(void){
 }
 
 void rcOutputs(uint8_t mode){
-	TIMSK2 = (mode)? (1<<OCIE2A) : 0;
+	TIMSK1 = (mode)? _BV(TOIE1) : 0;
 }
 
 void uartIntConfig(uint8_t mode){
@@ -736,13 +749,15 @@ uint8_t atMegaInit(void){
 	OCR0A = 156; // 10 ms
 	TIMSK0 = (1<<OCIE0A);
 	
-	TCCR1A = _BV(COM1A1)|_BV(WGM11)|_BV(WGM13);
-	TCCR1B = (1<<CS12); //(1<<CS11)|(1<<CS10); //
-	ICR1 = 0xFFFF;
+	
+	TCCR1A = _BV(COM1A1)|_BV(WGM11);
+	TCCR1B = _BV(WGM13)|_BV(WGM12)|(1<<CS11);
+	ICR1 = 50000; // 25 ms
+	OCR1A = 0; //800; // 400 uS
 	
 	// TCCR2A = 
-	TCCR2B = _BV(CS22)|_BV(CS20); // clk/128
-	OCR2A = 125; // 1.0 ms
+	// TCCR2B = _BV(CS22)|_BV(CS20); // clk/128
+	// OCR2A = 125; // 1.0 ms
 	// TIMSK2 = (1<<OCIE2A);
 	
 	
