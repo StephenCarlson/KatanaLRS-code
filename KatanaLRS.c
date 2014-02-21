@@ -179,10 +179,10 @@ void flashBlueLED(uint8_t, uint8_t, uint8_t);
 static FILE uart_io = FDEV_SETUP_STREAM(putUARTchar, NULL, _FDEV_SETUP_WRITE);
 static char dataBufferA[BUFFER_SIZE]; //volatile
 
-static volatile uint16_t hopGlitchCount = 0;
+static volatile uint16_t timer10ms = 0;
 
 static volatile uint8_t ch;
-static volatile uint16_t pwmValues[CHANNELS] = {1000,1000,1000,1000,1000,1000,1000,1000};
+static volatile uint16_t pwmValues[CHANNELS] = {1200,1200,1200,1200,1200,1200,1200,1200};
 static volatile uint16_t pwmFrameSum;
 
 static struct{
@@ -269,57 +269,57 @@ ISR(TIMER1_OVF_vect ){ // May want to redo as if/else structure, more efficient?
 		case 0:
 			PWM_1 = HIGH;
 			ICR1 = pwmValues[ch]<<1;
-			ch+=1;
 			pwmFrameSum = pwmValues[ch]; // Note the subtle difference, =, not +=
+			ch+=1;
 			break;
 		case 1:
 			PWM_1 = LOW;
 			PWM_2 = HIGH;
 			ICR1 = pwmValues[ch]<<1;
-			ch+=1;
 			pwmFrameSum += pwmValues[ch];
+			ch+=1;
 			break;
 		case 2:
 			PWM_2 = LOW;
 			PWM_3 = HIGH;
 			ICR1 = pwmValues[ch]<<1;
-			ch+=1;
 			pwmFrameSum += pwmValues[ch];
+			ch+=1;
 			break;
 		case 3:
 			PWM_3 = LOW;
 			PWM_4 = HIGH;
 			ICR1 = pwmValues[ch]<<1;
-			ch+=1;
 			pwmFrameSum += pwmValues[ch];
+			ch+=1;
 			break;
 		case 4:
 			PWM_4 = LOW;
 			PWM_5 = HIGH;
 			ICR1 = pwmValues[ch]<<1;
-			ch+=1;
 			pwmFrameSum += pwmValues[ch];
+			ch+=1;
 			break;
 		case 5:
 			PWM_5 = LOW;
 			PWM_6 = HIGH;
 			ICR1 = pwmValues[ch]<<1;
-			ch+=1;
 			pwmFrameSum += pwmValues[ch];
+			ch+=1;
 			break;
 		case 6:
 			PWM_6 = LOW;
 			PWM_7 = HIGH;
 			ICR1 = pwmValues[ch]<<1;
-			ch+=1;
 			pwmFrameSum += pwmValues[ch];
+			ch+=1;
 			break;
 		case 7:
 			PWM_7 = LOW;
 			PWM_8 = HIGH;
 			ICR1 = pwmValues[ch]<<1;
-			ch+=1;
 			pwmFrameSum += pwmValues[ch];
+			ch+=1;
 			// printf("Sum: %u\n",pwmFrameSum); Getting 14000
 			break;
 		case 8:
@@ -337,7 +337,7 @@ ISR(TIMER1_OVF_vect ){ // May want to redo as if/else structure, more efficient?
 
 ISR(TIMER0_COMPA_vect){
 	sys.intSrc.timer0 = 1;
-	hopGlitchCount += 1;
+	timer10ms = (timer10ms >= 60000)? 0 : timer10ms+1; // 600 sec, 10 min
 }
 
 ISR(USART_RX_vect){
@@ -428,6 +428,9 @@ void setup(void){
 	
 	// Application Warm-up
 	TIMSK1 = _BV(TOIE1);
+	for(uint8_t i=0; i<CHANNELS; i++){
+		pwmValues[i] = 1500;
+	}
 	
 	// Console Usage Hints
 	printHelpInfo();
@@ -444,11 +447,13 @@ void loop(void){
 	#define DL_BIND_FLAG (1<<7)
 	
 	// Assert Concurrent Outputs (Outputs not tied to a FSM State, but merely from inputs)
-	if(sys.statusLEDs) LED_OR = HIGH; //flashOrangeLED(2,5,5); // Solve Delay timing issue
+	// if(sys.statusLEDs) LED_OR = HIGH; //flashOrangeLED(2,5,5); // Solve Delay timing issue
 	
 	
 	
 	if(sys.intSrc.wdt){ // Wow! Race Condition! Should only check this in a single function
+		if(sys.statusLEDs) LED_OR = HIGH;
+		// updateVolts(1);
 		sys.intSrc.wdt = 0;
 		_delay_ms(1);
 		printf("State: %s\tLipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\n",
@@ -489,6 +494,7 @@ void loop(void){
 					// rfmReadFIFO(rfmFIFO);
 					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
 					// else sys.state = ACTIVE;
+					// sys.state = ACTIVE;
 				} else sys.state = (sys.batteryState)? SLEEP : DOWN;
 			// Continue if remaining in current state
 				if(sys.state != SLEEP) break;
@@ -513,7 +519,7 @@ void loop(void){
 					// rfmReadFIFO(rfmFIFO);
 					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
 					// else sys.state = ACTIVE;
-				} else sys.state = (eltTransmitCount > 10)? SLEEP : BEACON;
+				} else sys.state = (eltTransmitCount > 5)? SLEEP : BEACON;
 			// Continue if remaining in current state
 				if(sys.state != BEACON){
 					eltTransmitCount = 0;
@@ -531,12 +537,9 @@ void loop(void){
 			break;
 		case ACTIVE:
 			// Refresh information
-				// if(sys.intSrc.wdt){ // These should be a separate timer, no WDT
-					// hopGlitchCount = 0;
-					// sys.intSrc.wdt = 0;
-				// }
 			// Determine nextState using refreshed information
-				if(0){ //hopGlitchCount > 10){ // 10 Misses in 20 hops (Fix this)
+				if(timer10ms > 600){ // 10 Misses in 20 hops (Fix this)
+					timer10ms = 0;
 					failsafeCounter = 0;
 					updateVolts(1); // Very Dangerous. Perhaps just checking for the powerState component?
 					sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
@@ -545,6 +548,9 @@ void loop(void){
 				if(sys.state != ACTIVE) break;
 			// Assert Outputs
 				rcOutputs(ENABLED);
+				for(uint8_t i=0; i<CHANNELS; i++){
+					pwmValues[i] = 1700;
+				}
 				sys.statusLEDs = ENABLED;
 			// Configure for next loop and continue
 				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
@@ -558,12 +564,18 @@ void loop(void){
 					// sys.intSrc.wdt = 0;
 				// }
 			// Determine nextState using refreshed information
-				if(failsafeCounter > 10) sys.state = (sys.powerState)? BEACON : SLEEP;
+				if(timer10ms > 800){
+					sys.state = (sys.powerState)? BEACON : SLEEP;
+					timer10ms = 0;
+				}
 			// Continue if remaining in current state
 				if(sys.state != FAILSAFE) break;
 			// Assert Outputs
 				rcOutputs(ENABLED);
 				sys.statusLEDs = ENABLED;
+				for(uint8_t i=0; i<CHANNELS; i++){
+					pwmValues[i] = 1000;
+				}
 			// Configure for next loop and continue
 				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
 			break;
@@ -582,19 +594,22 @@ void loop(void){
 }
 
 void rcOutputs(uint8_t mode){
-	TIMSK1 = (mode)? _BV(TOIE1) : 0;
+	TIMSK1 = (mode == ENABLED)? _BV(TOIE1) : 0;
+	TCCR1A = (mode == ENABLED)? TCCR1A | _BV(COM1A1) : TCCR1A & (~_BV(COM1A1));
 	
-	// if(mode){
-		// DDRC |= 0x0F;
-		// DDRD |= 0xF0;
+	/*
+	if(mode == ENABLED){
+		DDRC |= 0x0F;
+		DDRD |= 0xF0;
 		// PORTC |=0x0F;
 		// PORTD |=0xF0;
-	// } else{
-		// DDRC &= ~(0x0F);
-		// DDRD &= ~(0xF0);
+	} else{
+		DDRC &= ~(0x0F);
+		DDRD &= ~(0xF0);
 		// PORTC &= ~(0x0F);
 		// PORTD &= ~(0xF0);
-	// }
+	}
+	*/
 }
 
 void uartIntConfig(uint8_t mode){
@@ -726,8 +741,9 @@ uint8_t atMegaInit(void){
 	PRR = 0;
 
 	// Timers
+	TCCR0A = _BV(WGM01);
 	TCCR0B = (1<<CS02)|(1<<CS00); // clk/1024
-	OCR0A = 156; // 10 ms
+	OCR0A = 156; // 10 ms // Or is it 155?
 	TIMSK0 = (1<<OCIE0A);
 	
 	
