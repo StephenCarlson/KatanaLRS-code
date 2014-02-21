@@ -155,7 +155,7 @@ void printRegisters(void);
 uint8_t systemSleep(uint8_t);
 uint8_t atMegaInit(void);
 void radioMode(uint8_t);
-void radioWriteReg(uint8_t, uint8_t);
+uint8_t radioWriteReg(uint8_t, uint8_t);
 uint8_t radioReadReg(uint8_t);
 uint8_t radioReadRSSI(void);
 void rfmReadFIFO(uint8_t *array);
@@ -184,6 +184,8 @@ static volatile uint16_t timer10ms = 0;
 static volatile uint8_t ch;
 static volatile uint16_t pwmValues[CHANNELS] = {1200,1200,1200,1200,1200,1200,1200,1200};
 static volatile uint16_t pwmFrameSum;
+
+static uint16_t rfmWriteErrors;
 
 static struct{
 	uint16_t ch1:10;
@@ -424,6 +426,11 @@ void setup(void){
 		// transmitELT_Packet();										// ~100 ms
 	} else{
 		printf("FAILED!\n");
+		for(uint8_t i=0; i<10; i++){
+			flashOrangeLED(5,10,40);
+			if(deviceIdCheck()) break;
+			if(i == 10) sys.state = FAILSAFE; 
+		}
 	}	
 	
 	*((uint8_t*) &configFlags) = eeprom_read_byte((const uint8_t*) EEPROM_START);
@@ -454,19 +461,20 @@ void loop(void){
 	
 	
 	if(sys.intSrc.wdt){ // Wow! Race Condition! Should only check this in a single function
-		if(sys.statusLEDs) LED_OR = HIGH;
+		//if(sys.statusLEDs) LED_OR = HIGH;
 		// updateVolts(1);
 		sys.intSrc.wdt = 0;
 		_delay_ms(1);
-		printf("State: %s\tLipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\n",
+		printf("State: %s\tLipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\tErrors: %u\n",
 			(sys.state == 0)? "DOWN" :(sys.state == 1)? "SLEEP" :(sys.state == 2)? "BEACON" :
-			(sys.state == 3)? "ACTIVE" : "FAILSAFE",volt.lipoly,volt.sysVin,volt.atMega,noiseFloor);
+			(sys.state == 3)? "ACTIVE" : "FAILSAFE",volt.lipoly,volt.sysVin,volt.atMega,noiseFloor, rfmWriteErrors);
 
 	}
 		
 	// Carry out the current State processes and determine next state
 	switch(sys.state){ // Native State Machine
 		case DOWN:
+				wdtIntConfig(DISABLED,0);
 			// Refresh information
 				updateVolts(0);
 				rfmIntList = 0; //rfmReadIntrpts();
@@ -484,10 +492,10 @@ void loop(void){
 				uartIntConfig(DISABLED);
 			// Configure for next loop and continue
 				// rfmIntConfig(ENABLED,noiseFloor);
-				wdtIntConfig(DISABLED,0);
 				systemSleep(9);
 			break;
 		case SLEEP:
+				wdtIntConfig(ENABLED,9);
 			// Refresh information
 				updateVolts(0);
 				rfmIntList = 0; //rfmReadIntrpts();
@@ -507,7 +515,6 @@ void loop(void){
 				transmitELT();
 			// Configure for next loop and continue
 				// rfmIntConfig(ENABLED,noiseFloor);
-				wdtIntConfig(ENABLED,9);
 				systemSleep(9);
 			break;
 		case BEACON:
@@ -897,12 +904,20 @@ void radioMode(uint8_t mode){
 	#endif
 }
 
-void radioWriteReg(uint8_t regAddress, uint8_t regValue){
+uint8_t radioWriteReg(uint8_t regAddress, uint8_t regValue){
 	CS_RFM = LOW;
 		transferSPI((RFM_WRITE<<7) | regAddress);
 		transferSPI(regValue);
 	CS_RFM = HIGH;
 	_delay_us(1);
+	uint8_t readBack = radioReadReg(regAddress)^(regValue);
+	rfmWriteErrors += (readBack)? 1 : 0;
+	if(readBack){
+		LED_OR = HIGH;
+		_delay_us(10);
+		LED_OR = LOW;
+	}
+	return (readBack)? 0 : 1;
 }
 
 uint8_t radioReadReg(uint8_t regAddress){
