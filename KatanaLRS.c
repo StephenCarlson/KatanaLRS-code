@@ -429,7 +429,7 @@ void setup(void){
 		for(uint8_t i=0; i<10; i++){
 			flashOrangeLED(5,10,40);
 			if(deviceIdCheck()) break;
-			if(i == 10) sys.state = FAILSAFE; 
+			if(i >= 9) sys.state = FAILSAFE; 
 		}
 	}	
 	
@@ -917,7 +917,7 @@ uint8_t radioWriteReg(uint8_t regAddress, uint8_t regValue){
 		_delay_us(10);
 		LED_OR = LOW;
 	}
-	return (readBack)? 0 : 1;
+	return readBack; //(readBack)? readBack : 0; Seems I check for not working more than working.
 }
 
 uint8_t radioReadReg(uint8_t regAddress){
@@ -973,7 +973,7 @@ void transmitELT(void){
 	radioWriteReg(0x75, 0x53);
 	radioWriteReg(0x76, 0x64);
 	radioWriteReg(0x77, 0x00);
-	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
+	//radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
 	_delay_ms(1);
 	transmitELT_Packet(); // Want to send packet before battery sags in worst case
 	_delay_ms(1);
@@ -983,13 +983,13 @@ void transmitELT(void){
 
 void transmitELT_Beacon(void){
 	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
-		radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
+		for(uint8_t i=0; (i<20) && radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton)); i++) _delay_ms(1);
 		//printf("Fail on Preset: Beacon\n");
 		//_delay_ms(2);
 	}
 	
 	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
-	radioWriteReg(0x72, 7);		// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
+	radioWriteReg(0x72, 7);			// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
 	
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
 	//_delay_ms(1);
@@ -1019,9 +1019,8 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	radioWriteReg(0x6D, 7);			// Max Power
 	
 	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
-		radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
+		for(uint8_t i=0; (i<20) && radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton)); i++) _delay_ms(1);
 		// printf("Fail on Preset: Packet\n");
-		_delay_ms(1);
 	}
 	
 	//		FCC ID, Lat, Long, UTC Fix, # Sat's, HDOP, Altitude, LiPoly, System In, AtMega
@@ -1048,13 +1047,7 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
 
-	for(uint8_t i=0; i<200; i++){
-		if((radioReadReg(0x07)&0x08) == 0){
-			// printf("Break@ %u\n",i);
-			break;
-		}
-		_delay_ms(1);
-	}
+	for(uint8_t i=0; (i<200) && (radioReadReg(0x07)&0x08); i++) _delay_ms(1);
 }
 
 void updateVolts(uint8_t fastMode){
