@@ -8,22 +8,53 @@ import sys, getopt, os.path #time
 
 file_name = ""
 skip = 1
+filterOrder = 0
+baudrate = 4800.0 #9600.0 #9143.0 # Increase Slightly Some more 9183.0 #
+offset = 22 #11 # (-1)
+bytes = 80 #12 for 7Ch
+preambleBits = 10
 
 try:
-	opts, args = getopt.getopt(sys.argv[1:],"hgi:") #,["ifile="])
+	opts, args = getopt.getopt(sys.argv[1:],"hig:f:b:o:B:p:") #,["ifile="])
 except getopt.GetoptError:
-	print 'katanaDecoder.py -s -i <inputfile>'
+	print "KatanaLRS Decoder \n \
+	-h	Help \n \
+	-i	<Inputfile> \n \
+	-g	Graph \n \
+	-f	<Filter Order> \n \
+	-b	<Baudrate> \n \
+	-o	<Preamble Offset> \n\
+	-B	<Bytes in Payload> \n \
+	-p	<Preamble Bits for Valid>"
 	sys.exit(2)
 for opt, arg in opts:
 	if opt in ("-h", "--help"):
-		print 'katanaDecoder.py -s -i <inputfile>'
+		print "KatanaLRS Decoder \n \
+	-h	Help \n \
+	-i	<inputfile> \n \
+	-g	Graph \n \
+	-f	<Filter Order> \n \
+	-b	<Baudrate> \n \
+	-o	<Preamble Offset> \n\
+	-B	<Bytes in Payload> \n \
+	-p	<Preamble Bits for Valid>"
 		sys.exit()
-	elif opt in ("-i", "--ifile"):
+	elif opt in ("-i"): #, "--ifile"):
 		file_name = arg
 	elif opt in ("-g"):
 		skip = 0
 		#print "Skipping"
-
+	elif opt in ("-f"):
+		filterOrder = arg
+	elif opt in ("-b"):
+		baudrate = int(arg) * 1.0
+	elif opt in ("-o"):
+		offset = int(arg)
+	elif opt in ("-B"):
+		bytes = int(arg)
+	elif opt in ("-p"):
+		preambleBits = int(arg)
+	
 if file_name != "":
 	file_name = file_name + ".wav"
 else:
@@ -65,9 +96,12 @@ for i in range(0,length): #len(a)):
 	#print data
 	a[i]=data
 	
+if(int(filterOrder) > 0): # Moving into the Realm of Windowing Functions and Signal Processing
+	for i in range(len(a)-int(filterOrder)): # Moving Average, no Weights
+		for j in range(int(filterOrder)):
+			a[i] += a[i+j+1]
+		a[i]/(1.0+int(filterOrder))
 
-
-baudrate = 4800.0 #9600.0 #9143.0 # Increase Slightly Some more 9183.0 #
 period = 1/baudrate
 sampleDelta = 1/framerate
 
@@ -120,7 +154,7 @@ for i in range(0,len(diff)):
 				preambleCounter += 1
 				deltaSum += delta
 				#print i
-			elif( (sampPerPeriod*3.6 < delta) and preambleCounter >= 10 and diff[i] < 0):
+			elif( (sampPerPeriod*3.6 < delta) and preambleCounter >= preambleBits and diff[i] < 0):
 				line = "Valid Porch @ " + repr(i)
 				#if(i<100000): line += "\t"
 				line += "\tAvg Preamble Sa/Period: " + repr((deltaSum*1.0)/preambleCounter)
@@ -147,8 +181,8 @@ for i in range(0,len(diff)):
 timing = zeros(length)+annoyingOffset
 #timing = timing*dcBias*.1
 
-offset = 22 #11 # (-1)
-bytes = 80 #12 for 7Ch
+# offset = 22 #11 # (-1)
+# bytes = 80 #12 for 7Ch
 
 byteArray = [] #zeros(bytes,dtype=numpy.int) #zeros(bytes,Int) #array('B') #[] #zeros(bytes) #[bytes+1]
 for i in range(bytes):
