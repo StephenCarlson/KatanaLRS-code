@@ -2,16 +2,38 @@ import wave, struct
 from array import *
 import matplotlib.pyplot as plt
 from pylab import *
-import sys
+import sys, getopt, os.path #time
 
 #print "Program Start"
 
 file_name = ""
+skip = 1
 
-if len(sys.argv)>1 :
-	file_name = sys.argv[1] + ".wav"
+try:
+	opts, args = getopt.getopt(sys.argv[1:],"hgi:") #,["ifile="])
+except getopt.GetoptError:
+	print 'katanaDecoder.py -s -i <inputfile>'
+	sys.exit(2)
+for opt, arg in opts:
+	if opt in ("-h", "--help"):
+		print 'katanaDecoder.py -s -i <inputfile>'
+		sys.exit()
+	elif opt in ("-i", "--ifile"):
+		file_name = arg
+	elif opt in ("-g"):
+		skip = 0
+		#print "Skipping"
+
+if file_name != "":
+	file_name = file_name + ".wav"
 else:
-	file_name = "SDRSharp_20140121_180030Z_430500kHz_AF" + ".wav"
+	for file in os.listdir(os.getcwd()):
+		recent = 0.0
+		if file.endswith(".wav"):
+			if(os.path.getmtime(file) > recent): 
+				file_name = file
+				#print file, os.path.getmtime(file)
+	#file_name = "SDRSharp_20140221_154604Z_433998kHz_AF" + ".wav"
 print 'Using',file_name
 #print file_name + ".wav"
 
@@ -125,36 +147,51 @@ for i in range(0,len(diff)):
 timing = zeros(length)+annoyingOffset
 #timing = timing*dcBias*.1
 
-offset = 11 # (-1)
+offset = 22 #11 # (-1)
 bytes = 80 #12 for 7Ch
 
+byteArray = [] #zeros(bytes,dtype=numpy.int) #zeros(bytes,Int) #array('B') #[] #zeros(bytes) #[bytes+1]
+for i in range(bytes):
+	byteArray.append(0)
+
 for i in range(0,len(valid)):
-	if(valid[i] != annoyingOffset): # Yes, yes, I know this is like O(n^3) or something like that, need to optimize
-		line = "" #[]
+	if(valid[i] != annoyingOffset): # Yes, yes, I know this is like O(n^3) or something like that, need to optimize	
+		for l in range(bytes):
+			byteArray[l] = 0;
+		
+		#  line = "" #[]
 		if bytes*sampPerPeriod*10+i >len(valid):
 			break
 		for j in range(bytes):
-			octet = ""
+			#   octet = ""
 			for k in range(8):
 				l = int(sampPerPeriod*(j*8+k))+i+offset #int(round(sampPerPeriod*(j+0.5)))+i
 				timing[l] = dcBias*.1 #-2000
 				if(a[l] >=dcBias):
-					octet += '0' #.append(0)   #<<= 1 #print '0'
+					#   octet += '0' #.append(0)   #<<= 1 #print '0'
+					byteArray[j] = (byteArray[j])<<1 | 0x00
 				else:
-					octet += '1' #.append(1) #print '1'
-			line += octet + '\n' #(octet[::-1] + ' ')
-		print line
+					#   octet += '1' #.append(1) #print '1'
+					byteArray[j] = (byteArray[j])<<1 | 0x01
+			#   line += octet + '\n' #(octet[::-1] + ' ')
+		#print line
 
 		#print '---'
+
+		str = ">\t" #"\n>\t"
+		for i in range(bytes):
+			if(byteArray[i] in range(0x20, 0x7E)): #== '*'):
+				if(chr(byteArray[i]) == '*'): 
+					str += "*" #\n"
+					break
+				else: str += chr(byteArray[i]) #repr(bin(byteArray))
+		print str
 
 		
 lower = 0 #12100
 upper = length-1 #12700
 
 
-skip = 0
-if len(sys.argv)>2 :
-	if sys.argv[2] == "-s": skip = 1
 if skip == 0:
 	#plt.plot(t[lower:upper],a[lower:upper]*.5,'b',t[lower:upper],diff[lower:upper],'r',t[lower:upper],mark[lower:upper],'y',t[lower:upper],valid[lower:upper],'g')
 	plt.plot(a[lower:upper]*.1,'b')
