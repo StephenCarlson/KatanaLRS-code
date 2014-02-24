@@ -8,7 +8,7 @@ import sys, getopt, os.path #time
 
 file_name = ""
 skip = 1
-filterOrder = 0
+filterOrder = 5 #0
 baudrate = 4800.0 #9600.0 #9143.0 # Increase Slightly Some more 9183.0 #
 offset = 22 #11 # (-1)
 bytes = 80 #12 for 7Ch
@@ -39,20 +39,20 @@ for opt, arg in opts:
 	-B	<Bytes in Payload> \n \
 	-p	<Preamble Bits for Valid>"
 		sys.exit()
-	elif opt in ("-i"): #, "--ifile"):
+	if opt in ("-i"): #, "--ifile"):
 		file_name = arg
-	elif opt in ("-g"):
+	if opt in ("-g"):
 		skip = 0
 		#print "Skipping"
-	elif opt in ("-f"):
+	if opt in ("-f"):
 		filterOrder = arg
-	elif opt in ("-b"):
+	if opt in ("-b"):
 		baudrate = int(arg) * 1.0
-	elif opt in ("-o"):
+	if opt in ("-o"):
 		offset = int(arg)
-	elif opt in ("-B"):
+	if opt in ("-B"):
 		bytes = int(arg)
-	elif opt in ("-p"):
+	if opt in ("-p"):
 		preambleBits = int(arg)
 	
 if file_name != "":
