@@ -147,6 +147,7 @@ typedef struct{
 // Function Prototypes
 void setup(void);
 void loop(void);
+void printState(uint8_t);
 void rcOutputs(uint8_t);
 void uartIntConfig(uint8_t);
 void wdtIntConfig(uint8_t, uint8_t);
@@ -453,85 +454,102 @@ void loop(void){
 	uint16_t rfmIntList = 0;
 	uint8_t rfmFIFO[16];
 	#define RFM_INT_VALID_PACKET_RX (1<<(1))
+	#define RFM_INT_RSSI_THRESH ((1<<(4))<<8)
 	#define DL_BIND_FLAG (1<<7)
 	
 	// Assert Concurrent Outputs (Outputs not tied to a FSM State, but merely from inputs)
 	// if(sys.statusLEDs) LED_OR = HIGH; //flashOrangeLED(2,5,5); // Solve Delay timing issue
 	
 	
+	// transferSPI(sys.state);
+	// _delay_us(1);
 	
 	if(sys.intSrc.wdt){ // Wow! Race Condition! Should only check this in a single function
 		//if(sys.statusLEDs) LED_OR = HIGH;
 		// updateVolts(1);
 		sys.intSrc.wdt = 0;
 		_delay_ms(1);
-		printf("State: %s\tLipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\tErrors: %u\n",
-			(sys.state == 0)? "DOWN" :(sys.state == 1)? "SLEEP" :(sys.state == 2)? "BEACON" :
-			(sys.state == 3)? "ACTIVE" : "FAILSAFE",volt.lipoly,volt.sysVin,volt.atMega,noiseFloor, rfmWriteErrors);
+		// printf("State: %s\tLipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\tErrors: %u\n",
+			// (sys.state == 0)? "DOWN" :(sys.state == 1)? "SLEEP" :(sys.state == 2)? "BEACON" :
+			// (sys.state == 3)? "ACTIVE" : "FAILSAFE",volt.lipoly,volt.sysVin,volt.atMega,noiseFloor, rfmWriteErrors);
 
 	}
 		
 	// Carry out the current State processes and determine next state
 	switch(sys.state){ // Native State Machine
 		case DOWN:
-				wdtIntConfig(DISABLED,0);
+				wdtIntConfig(ENABLED,9); //DISABLED,0);
 			// Refresh information
 				updateVolts(0);
-				rfmIntList = 0; //rfmReadIntrpts();
+				noiseFloor = radioReadRSSI();
+				//rfmIntList = rfmReadIntrpts();
 			// Determine nextState using refreshed information
-				if(rfmIntList&RFM_INT_VALID_PACKET_RX){
+				if(noiseFloor>100){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
+					printf("Rx in DOWN Works!\t%u\t%X\n",noiseFloor,rfmIntList);
 					// rfmReadFIFO(rfmFIFO);
 					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = SLEEP;
+					sys.state = SLEEP;
 					// else sys.state = ACTIVE;
 				} else sys.state = (sys.batteryState)? SLEEP : DOWN;
 			// Continue if remaining in current state
-				if(sys.state != DOWN) break;
+				if(sys.state != DOWN){
+					printState(noiseFloor);
+					break;
+				}
 			// Assert Outputs
 				rcOutputs(DISABLED);
 				sys.statusLEDs = ENABLED; //DISABLED;
 				uartIntConfig(DISABLED);
 			// Configure for next loop and continue
-				// rfmIntConfig(ENABLED,noiseFloor);
+				//rfmIntConfig(DISABLED,100);
 				systemSleep(9);
 			break;
 		case SLEEP:
 				wdtIntConfig(ENABLED,9);
 			// Refresh information
 				updateVolts(0);
-				rfmIntList = 0; //rfmReadIntrpts();
+				noiseFloor = radioReadRSSI();
+				//rfmIntList = rfmReadIntrpts();
 			// Determine nextState using refreshed information
-				if(rfmIntList&RFM_INT_VALID_PACKET_RX){
+				if(noiseFloor>100){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
+					printf("Rx in SLEEP Works!\t%u\t%X\n",noiseFloor,rfmIntList);
 					// rfmReadFIFO(rfmFIFO);
 					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
+					sys.state = BEACON;
 					// else sys.state = ACTIVE;
 					// sys.state = ACTIVE;
 				} else sys.state = (sys.batteryState)? SLEEP : DOWN;
 			// Continue if remaining in current state
-				if(sys.state != SLEEP) break;
+				if(sys.state != SLEEP){
+					printState(noiseFloor);
+					break;
+				}
 			// Assert Outputs
 				rcOutputs(DISABLED);
 				sys.statusLEDs = ENABLED; //DISABLED;
 				uartIntConfig(DISABLED);
 				transmitELT();
 			// Configure for next loop and continue
-				// rfmIntConfig(ENABLED,noiseFloor);
+				//rfmIntConfig(DISABLED,100);
 				systemSleep(9);
 			break;
 		case BEACON:
-				wdtIntConfig(ENABLED,9);
+				wdtIntConfig(ENABLED,8);
+				//rfmIntConfig(DISABLED,100);
 			// Refresh information
 				updateVolts(1);
-				rfmIntList = 0; //rfmReadIntrpts();
+				//rfmIntList = rfmReadIntrpts();
 				_delay_ms(2);
 			// Determine nextState using refreshed information
-				if(rfmIntList&RFM_INT_VALID_PACKET_RX){
+				if(0){ //rfmIntList&RFM_INT_VALID_PACKET_RX){
 					// rfmReadFIFO(rfmFIFO);
 					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
 					// else sys.state = ACTIVE;
-				} else sys.state = (eltTransmitCount > 5)? SLEEP : BEACON;
+				} else sys.state = (eltTransmitCount > 100)? SLEEP : BEACON;
 			// Continue if remaining in current state
 				if(sys.state != BEACON){
 					eltTransmitCount = 0;
+					printState(noiseFloor);
 					break;
 				}
 				eltTransmitCount += 1;
@@ -554,7 +572,10 @@ void loop(void){
 					sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
 				} else sys.state = ACTIVE;
 			// Continue if remaining in current state
-				if(sys.state != ACTIVE) break;
+				if(sys.state != ACTIVE){
+					printState(noiseFloor);
+					break;
+				}
 			// Assert Outputs
 				rcOutputs(ENABLED);
 				for(uint8_t i=0; i<CHANNELS; i++){
@@ -578,7 +599,10 @@ void loop(void){
 					timer10ms = 0;
 				}
 			// Continue if remaining in current state
-				if(sys.state != FAILSAFE) break;
+				if(sys.state != FAILSAFE){
+					printState(noiseFloor);
+					break;
+				}
 			// Assert Outputs
 				rcOutputs(ENABLED);
 				sys.statusLEDs = ENABLED;
@@ -600,6 +624,13 @@ void loop(void){
 
 	
 	LED_OR = LOW;
+}
+
+void printState(uint8_t noiseFloor){
+	printf("State: %s\tLipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\tErrors: %u\n",
+			(sys.state == 0)? "DOWN" :(sys.state == 1)? "SLEEP" :(sys.state == 2)? "BEACON" :
+			(sys.state == 3)? "ACTIVE" : "FAILSAFE",volt.lipoly,volt.sysVin,volt.atMega,noiseFloor, rfmWriteErrors);
+
 }
 
 void rcOutputs(uint8_t mode){
@@ -647,11 +678,41 @@ void rfmIntConfig(uint8_t mode, uint8_t noiseFloor){
 		radioWriteReg(0x05, (1<<1)); // Enable Valid Packet Received Interrupt
 		radioWriteReg(0x06, (1<<4)); // Enable RSSI Interrupt
 		radioWriteReg(0x27, (noiseFloor+60)); // Configure RSSI for +30dBm Level Threshold
+		
+		// For 3500 bit/sec @ 5 kHz Dev, for detecting a 1750 Hz Tone
+		radioWriteReg(0x1C, 0x2B);		// IF Filter Bandwidth
+		radioWriteReg(0x1D, 0x44);		// AFC Loop Gearshift Override
+		radioWriteReg(0x1E, 0x0A);		// AFC Timing Control
+		radioWriteReg(0x1F, 0x03);		// Clock Recovery Gearshift Override
+		radioWriteReg(0x20, 0x1E);		// Clock Recovery Oversampling Rate
+		radioWriteReg(0x21, 0x20);		// Clock Recovery Offset 2
+		radioWriteReg(0x22, 0x72);		// Clock Recovery Offset 1
+		radioWriteReg(0x23, 0xB0);		// Clock Recovery Offset 0
+		radioWriteReg(0x24, 0x00);		// Clock Recovery Timing Loop Gain 1
+		radioWriteReg(0x25, 0xA2);		// Clock Recovery Timing Loop Gain 0
+		radioWriteReg(0x2A, 0x1D);		// AFC Limiter
+		radioWriteReg(0x34, 0x40);		// 64 nibble = 32 byte preamble
+		radioWriteReg(0x35, 0x20);		// 0x35 need to detect 20bit preamble
+		radioWriteReg(0x65, 0x60);		// Clock Recovery Timing Loop Gain 0
+		radioWriteReg(0x71, 0x12);		// FSK via SDI
+		radioWriteReg(0x72, 8);			// Frequency deviation setting to 5 kHz, total 10 kHz deviation, 5000/625
+		
+		radioWriteReg(0x07, 0);
+		radioWriteReg(0x14, 7);			// R in T_WUT = 4 * M * 2^R / 32768, .015625*M ms for R=7 (2^7=128)
+		radioWriteReg(0x15, 0);			// M[15:8]
+		radioWriteReg(0x16, 128);		// M[7:0]
+		radioWriteReg(0x19, 1);			// LDC in T_LDC_ON = 4 * LDC * 2^R / 32768
+		radioWriteReg(0x07, (1<<5));	// Wake Up Timer Enabled
+		
+		// Preamble is 1750 -- 3500 bps, .032 sec -> 56 bits, can capture 16 bits in that time
+		// .016 TLDC is .015625 * 32768 /4 
+		
 		EICRA = 0;
 		EIMSK = (1<<INT0); //|(1<<INT0);
 	} else{
 		radioWriteReg(0x05, 0);
 		radioWriteReg(0x06, 0);
+		radioWriteReg(0x07, 0);
 		EIMSK = 0;
 	}
 }
@@ -904,6 +965,9 @@ void radioMode(uint8_t mode){
 	#endif
 }
 
+// rfmSetRx(uint8_t freq, uint8_t baud, uint8_t freqDev){
+// }
+
 uint8_t radioWriteReg(uint8_t regAddress, uint8_t regValue){
 	CS_RFM = LOW;
 		transferSPI((RFM_WRITE<<7) | regAddress);
@@ -934,7 +998,7 @@ uint8_t radioReadRSSI(void){
 		// printf("%X\n",radioReadReg(OPCONTROL1_REG));
 		radioWriteReg(OPCONTROL1_REG, (1<<RFM_rxon));
 		
-		_delay_ms(3);
+		_delay_ms(10);
 		
 		// for(uint8_t i=0; i<255; i++){
 			// if((radioReadReg(0x02)&0x01) != 1){
@@ -951,7 +1015,7 @@ uint8_t radioReadRSSI(void){
 			// _delay_ms(1);
 		// }
 		
-		radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
+		radioWriteReg(OPCONTROL1_REG, 0); //(1<<RFM_xton));
 	}
 	
 	return radioReadReg(0x26);
@@ -1182,6 +1246,59 @@ void flashBlueLED(uint8_t count, uint8_t high, uint8_t low){
 		_delay_ms(low);
 	}
 }
+
+
+/*
+
+To-Do:
+	The Repeater Access Tone used in the amateur radio world is 1750 Hz, if not CTCSS, which is ~100 Hz.
+		Would appear as 3500 bps preamble
+		Get Direct Rx Mode working
+	It therefore makes sense to add a frequency counter that detect this tone if the RSSI is strong in a sleep mode.
+	This way, the device will ignore random signals during DOWN/SLEEP.
+	Need to test all beacon states/behaviors.
+	Add Packet interaction/decoding:
+		CRC-16
+		Convert 8-bit SPI to 10-bit UART
+		Get Sync Word detection working
+		Get the selective bit pattern thing working in the RFM
+	Get Bind working once the packet mechanism works
+	Get the frequency table implimented, take one final shot and dissecting the DragonLink pattern
+	Get WDT to keep things stable. Continue to reduce startup and aquire time.
+	Go on a fox hunt with the full beacon states implemented.
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 /*
