@@ -151,16 +151,10 @@ void printState(uint8_t);
 void rcOutputs(uint8_t);
 void uartIntConfig(uint8_t);
 void wdtIntConfig(uint8_t, uint8_t);
-void rfmIntConfig(uint8_t, uint8_t);
 void printRegisters(void);
 uint8_t systemSleep(uint8_t);
 uint8_t atMegaInit(void);
-void radioMode(uint8_t);
-uint8_t radioWriteReg(uint8_t, uint8_t);
-uint8_t radioReadReg(uint8_t);
-uint8_t radioReadRSSI(void);
-void rfmReadFIFO(uint8_t *array);
-uint16_t rfmReadIntrpts(void);
+
 void transmitELT(void);
 void transmitELT_Beacon(void);
 void transmitELT_Packet(void); //uint8_t *,uint8_t);
@@ -673,50 +667,6 @@ void wdtIntConfig(uint8_t mode, uint8_t interval){
 	}
 }
 
-void rfmIntConfig(uint8_t mode, uint8_t noiseFloor){
-	if(mode == ENABLED){
-		radioWriteReg(0x05, (1<<1)); // Enable Valid Packet Received Interrupt
-		radioWriteReg(0x06, (1<<4)); // Enable RSSI Interrupt
-		radioWriteReg(0x27, (noiseFloor+60)); // Configure RSSI for +30dBm Level Threshold
-		
-		// For 3500 bit/sec @ 5 kHz Dev, for detecting a 1750 Hz Tone
-		radioWriteReg(0x1C, 0x2B);		// IF Filter Bandwidth
-		radioWriteReg(0x1D, 0x44);		// AFC Loop Gearshift Override
-		radioWriteReg(0x1E, 0x0A);		// AFC Timing Control
-		radioWriteReg(0x1F, 0x03);		// Clock Recovery Gearshift Override
-		radioWriteReg(0x20, 0x1E);		// Clock Recovery Oversampling Rate
-		radioWriteReg(0x21, 0x20);		// Clock Recovery Offset 2
-		radioWriteReg(0x22, 0x72);		// Clock Recovery Offset 1
-		radioWriteReg(0x23, 0xB0);		// Clock Recovery Offset 0
-		radioWriteReg(0x24, 0x00);		// Clock Recovery Timing Loop Gain 1
-		radioWriteReg(0x25, 0xA2);		// Clock Recovery Timing Loop Gain 0
-		radioWriteReg(0x2A, 0x1D);		// AFC Limiter
-		radioWriteReg(0x34, 0x40);		// 64 nibble = 32 byte preamble
-		radioWriteReg(0x35, 0x20);		// 0x35 need to detect 20bit preamble
-		radioWriteReg(0x65, 0x60);		// Clock Recovery Timing Loop Gain 0
-		radioWriteReg(0x71, 0x12);		// FSK via SDI
-		radioWriteReg(0x72, 8);			// Frequency deviation setting to 5 kHz, total 10 kHz deviation, 5000/625
-		
-		radioWriteReg(0x07, 0);
-		radioWriteReg(0x14, 7);			// R in T_WUT = 4 * M * 2^R / 32768, .015625*M ms for R=7 (2^7=128)
-		radioWriteReg(0x15, 0);			// M[15:8]
-		radioWriteReg(0x16, 128);		// M[7:0]
-		radioWriteReg(0x19, 1);			// LDC in T_LDC_ON = 4 * LDC * 2^R / 32768
-		radioWriteReg(0x07, (1<<5));	// Wake Up Timer Enabled
-		
-		// Preamble is 1750 -- 3500 bps, .032 sec -> 56 bits, can capture 16 bits in that time
-		// .016 TLDC is .015625 * 32768 /4 
-		
-		EICRA = 0;
-		EIMSK = (1<<INT0); //|(1<<INT0);
-	} else{
-		radioWriteReg(0x05, 0);
-		radioWriteReg(0x06, 0);
-		radioWriteReg(0x07, 0);
-		EIMSK = 0;
-	}
-}
-
 void printRegisters(void){
 	
 	
@@ -867,170 +817,6 @@ uint8_t atMegaInit(void){
 	sei();
 	
 	return startupStatus;
-}
-
-void radioMode(uint8_t mode){
-	radioWriteReg(GPIO_0_CFG, GPIO_TXST);
-	radioWriteReg(GPIO_1_CFG, GPIO_RXST);
-	radioWriteReg(GPIO_2_CFG, GPIO_PMBLDET);
-	//																								Add		R/W	Function/Desc		[7]			[6]			[5]			[4]			[3]			[2]			[1]			[0]		Reset Value
-	radioWriteReg(0x06, 0x00);		// Disable all interrupts										06		R/W	Interrupt Enable 2	enswdet		enpreaval	enpreainval	enrssi		enwut		enlbd		enchiprdy	enpor	03h
-	radioWriteReg(0x07, 0x01);		// Set READY mode
-	radioWriteReg(0x09, 0x7F);		// Cap = 12.5pF
-	radioWriteReg(0x0A, 0x05);		// Clk output is 2MHz
-
-	radioWriteReg(0x0F, 0x70);		// NO ADC used
-	radioWriteReg(0x10, 0x00);		// no ADC used
-	radioWriteReg(0x12, 0x00);		// No temp sensor used
-	radioWriteReg(0x13, 0x00);		// no temp sensor used
-
-	radioWriteReg(0x70, 0x20);		// No manchester code, no data whiting, data rate < 30Kbps
-
-	radioWriteReg(0x1C, 0x1D);		// IF filter bandwidth
-	radioWriteReg(0x1D, 0x40);		// AFC Loop
-	// radioWriteReg(0x1E, 0x0A);	// AFC timing
-
-	radioWriteReg(0x20, 0xA1);		// clock recovery
-	radioWriteReg(0x21, 0x20);		// clock recovery
-	radioWriteReg(0x22, 0x4E);		// clock recovery
-	radioWriteReg(0x23, 0xA5);		// clock recovery
-	radioWriteReg(0x24, 0x00);		// clock recovery timing
-	radioWriteReg(0x25, 0x0A);		// clock recovery timing
-
-	// radioWriteReg(0x2A, 0x18);	// AFC Limiter
-	radioWriteReg(0x2C, 0x00);		// OOK Counter
-	radioWriteReg(0x2D, 0x00);		// OOK Counter
-	radioWriteReg(0x2E, 0x00);		// Slicer Peak Hold
-
-	radioWriteReg(0x6E, 0x27);		// 0x27 for 4800, 0x4E for 9600
-	radioWriteReg(0x6F, 0x52);		// 0x52 for 4800, 0xA5 for 9600
-
-	radioWriteReg(0x30, 0x00);		// Data access control <steve> 0x8C
-
-	radioWriteReg(0x32, 0xFF);		// Header control
-
-	radioWriteReg(0x33, 0x42);		// Header 3, 2, 1, 0 used for head length, fixed packet length, synchronize word length 3, 2,
-
-	radioWriteReg(0x34, 64);		// 64 nibble = 32 byte preamble
-	radioWriteReg(0x35, 0x20);		// 0x35 need to detect 20bit preamble
-	radioWriteReg(0x36, 0x2D);		// synchronize word
-	radioWriteReg(0x37, 0xD4);
-	radioWriteReg(0x38, 0x00);
-	radioWriteReg(0x39, 0x00);
-	radioWriteReg(0x3A, '*');		// set tx header 3
-	radioWriteReg(0x3B, 'E');		// set tx header 2
-	radioWriteReg(0x3C, 'W');		// set tx header 1
-	radioWriteReg(0x3D, 'S');		// set tx header 0
-	// radioWriteReg(0x3E, 17);		// set packet length to 17 bytes (max size: 255 bytes)
-	radioWriteReg(0x3E, 50);	// set packet length to PKTSIZE bytes (max size: 255 bytes)
-
-	radioWriteReg(0x3F, '*');		// set rx header
-	radioWriteReg(0x40, 'E');
-	radioWriteReg(0x41, 'W');
-	radioWriteReg(0x42, 'S');
-	radioWriteReg(0x43, 0xFF);		// check all bits
-	radioWriteReg(0x44, 0xFF);		// Check all bits
-	radioWriteReg(0x45, 0xFF);		// check all bits
-	radioWriteReg(0x46, 0xFF);		// Check all bits
-
-	// radioWriteReg(0x56, 0x02);		// <steve> Something to do with I/Q Swapping
-
-	radioWriteReg(0x6D, 0x00);		// Tx power to max
-
-	radioWriteReg(0x79, 0x00);		// no frequency hopping
-	radioWriteReg(0x7A, 0x00);		// no frequency hopping
-
-	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
-
-	radioWriteReg(0x72, 8);			// Frequency deviation setting to 5 kHz, total 10 kHz deviation, 5000/625
-
-	radioWriteReg(0x73, 32);		// Frequency offset in 156.25 Hz Increments, Crawls between 4840 and 5040 Hz, 5740 May be a better
-	radioWriteReg(0x74, 0x00);		// Frequency offset
-
-	radioWriteReg(0x75, 0x53);		// frequency set to 434MHz
-	radioWriteReg(0x76, 0x64);		// frequency set to 434MHz
-	radioWriteReg(0x77, 0x00);		// frequency set to 434Mhz
-
-	// radioWriteReg(0x5A, 0x7F);
-	// radioWriteReg(0x59, 0x40);
-	// radioWriteReg(0x58, 0x80);		// cpcuu[7:0], whatever this is
-
-	// radioWriteReg(0x6A, 0x0B);
-	// radioWriteReg(0x68, 0x04);
-	radioWriteReg(0x1F, 0x03);		// Clock Recovery Value
-	
-	
-	#if defined(RFM22B)
-
-	#endif
-}
-
-// rfmSetRx(uint8_t freq, uint8_t baud, uint8_t freqDev){
-// }
-
-uint8_t radioWriteReg(uint8_t regAddress, uint8_t regValue){
-	CS_RFM = LOW;
-		transferSPI((RFM_WRITE<<7) | regAddress);
-		transferSPI(regValue);
-	CS_RFM = HIGH;
-	_delay_us(1);
-	uint8_t readBack = radioReadReg(regAddress)^(regValue);
-	rfmWriteErrors += (readBack)? 1 : 0;
-	if(readBack){
-		LED_OR = HIGH;
-		_delay_us(10);
-		LED_OR = LOW;
-	}
-	return readBack; //(readBack)? readBack : 0; Seems I check for not working more than working.
-}
-
-uint8_t radioReadReg(uint8_t regAddress){
-	CS_RFM = LOW;
-		transferSPI(regAddress);
-		uint8_t value = transferSPI(0x00);
-	CS_RFM = HIGH;
-	_delay_us(1);
-	return value;
-}
-
-uint8_t radioReadRSSI(void){
-	if((radioReadReg(OPCONTROL1_REG)&(1<<RFM_rxon)) != (1<<RFM_rxon)){
-		// printf("%X\n",radioReadReg(OPCONTROL1_REG));
-		radioWriteReg(OPCONTROL1_REG, (1<<RFM_rxon));
-		
-		_delay_ms(10);
-		
-		// for(uint8_t i=0; i<255; i++){
-			// if((radioReadReg(0x02)&0x01) != 1){
-				// printf("Not Rx@ %u\n",i);
-				// //break;
-			// }
-			// _delay_ms(1);
-		// }
-		// for(uint8_t i=0; i<255; i++){
-			// if((radioReadReg(0x02)&0x01) == 0){
-				// printf("Break@ %u\n",i);
-				// break;
-			// }
-			// _delay_ms(1);
-		// }
-		
-		radioWriteReg(OPCONTROL1_REG, 0); //(1<<RFM_xton));
-	}
-	
-	return radioReadReg(0x26);
-}
-
-void rfmReadFIFO(uint8_t *array){
-	for(uint8_t i=0; i<16; i++){
-		array[i] = radioReadReg(0x7F);
-	}
-}
-
-uint16_t rfmReadIntrpts(void){
-	uint16_t rfmIntList = radioReadReg(0x03);
-	rfmIntList |= radioReadReg(0x04)<<8;
-	return rfmIntList;
 }
 
 void transmitELT(void){
