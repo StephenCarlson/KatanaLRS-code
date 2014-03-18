@@ -1,4 +1,4 @@
-// Katana Long-Range-System, by Stephen Carlson, May 2013
+// Katana Long-Range-System, by Stephen Carlson, March 2014
 // Use Notepad++ with Tab=4
 
 // Pins Configuration:
