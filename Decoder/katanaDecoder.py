@@ -14,57 +14,54 @@ offset = 22 #11 # (-1)
 bytes = 80 #12 for 7Ch
 preambleBits = 10
 
-try:
-	opts, args = getopt.getopt(sys.argv[1:],"hig:f:b:o:B:p:") #,["ifile="])
-except getopt.GetoptError:
-	print "KatanaLRS Decoder \n \
+def printHelp():
+	print "KatanaLRS Decoder by Stephen Carlson Jan 2014\n \
 	-h	Help \n \
-	-i	<Inputfile> \n \
 	-g	Graph \n \
-	-f	<Filter Order> \n \
-	-b	<Baudrate> \n \
-	-o	<Preamble Offset> \n\
-	-B	<Bytes in Payload> \n \
-	-p	<Preamble Bits for Valid>"
+	-i	<inputfile>        (Default: Newest \"_AF.wav\") \n \
+	-f	<Filter Order>     (Default: 5)   \n \
+	-b	<Baudrate>         (Default: 4800)\n \
+	-B	<Bytes in Payload> (Default: 80)  \n \
+	-o	<Preamble Offset>  (Default: 22)  \n \
+	-p	<Preamble Bits>    (Default: 10)"
+
+try:
+	opts, args = getopt.getopt(sys.argv[1:],"higf:b:o:B:p:") #,["ifile="])
+except getopt.GetoptError:
+	printHelp()
+	print "\nError with command line arguments\n"
 	sys.exit(2)
+
 for opt, arg in opts:
 	if opt in ("-h", "--help"):
-		print "KatanaLRS Decoder \n \
-	-h	Help \n \
-	-i	<inputfile> \n \
-	-g	Graph \n \
-	-f	<Filter Order> \n \
-	-b	<Baudrate> \n \
-	-o	<Preamble Offset> \n\
-	-B	<Bytes in Payload> \n \
-	-p	<Preamble Bits for Valid>"
+		printHelp()
 		sys.exit()
-	if opt in ("-i"): #, "--ifile"):
-		file_name = arg
 	if opt in ("-g"):
 		skip = 0
 		#print "Skipping"
+	if opt in ("-i"): #, "--ifile"):
+		file_name = arg
 	if opt in ("-f"):
-		filterOrder = arg
+		filterOrder = int(arg)
 	if opt in ("-b"):
 		baudrate = int(arg) * 1.0
-	if opt in ("-o"):
-		offset = int(arg)
 	if opt in ("-B"):
 		bytes = int(arg)
+	if opt in ("-o"):
+		offset = int(arg)
 	if opt in ("-p"):
 		preambleBits = int(arg)
 	
 if file_name != "":
 	file_name = file_name + ".wav"
 else:
+	recent = 0.0
 	for file in os.listdir(os.getcwd()):
-		recent = 0.0
-		if file.endswith(".wav"):
+		if file.endswith("_AF.wav"):
 			if(os.path.getmtime(file) > recent): 
 				file_name = file
-				#print file, os.path.getmtime(file)
-	#file_name = "SDRSharp_20140221_154604Z_433998kHz_AF" + ".wav"
+				recent = os.path.getmtime(file)
+			#print file, os.path.getmtime(file)
 print 'Using',file_name
 #print file_name + ".wav"
 
@@ -102,8 +99,8 @@ if(int(filterOrder) > 0): # Moving into the Realm of Windowing Functions and Sig
 			a[i] += a[i+j+1]
 		a[i]/(1.0+int(filterOrder))
 
-period = 1/baudrate
-sampleDelta = 1/framerate
+period = 1.0/baudrate
+sampleDelta = 1.0/framerate
 
 sampPerPeriod = framerate/baudrate #3.4 #
 print "Sa/Mark: " + repr(sampPerPeriod)
