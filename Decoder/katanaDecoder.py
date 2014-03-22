@@ -7,7 +7,7 @@ import sys, getopt, os.path #time
 #print "Program Start"
 
 file_name = ""
-skip = 1
+graph = 0
 filterOrder = 5 #0
 baudrate = 4800.0 #9600.0 #9143.0 # Increase Slightly Some more 9183.0 #
 offset = 22 #11 # (-1)
@@ -26,7 +26,7 @@ def printHelp():
 	-p	<Preamble Bits>    (Default: 10)"
 
 try:
-	opts, args = getopt.getopt(sys.argv[1:],"higf:b:o:B:p:") #,["ifile="])
+	opts, args = getopt.getopt(sys.argv[1:],"higf:b:o:B:p:",["ifile=","help"])
 except getopt.GetoptError:
 	printHelp()
 	print "\nError with command line arguments\n"
@@ -37,9 +37,8 @@ for opt, arg in opts:
 		printHelp()
 		sys.exit()
 	if opt in ("-g"):
-		skip = 0
-		#print "Skipping"
-	if opt in ("-i"): #, "--ifile"):
+		graph = 1
+	if opt in ("-i", "--ifile"):
 		file_name = arg
 	if opt in ("-f"):
 		filterOrder = int(arg)
@@ -62,7 +61,7 @@ else:
 				file_name = file
 				recent = os.path.getmtime(file)
 			#print file, os.path.getmtime(file)
-print 'Using',file_name
+print '\nUsing',file_name
 #print file_name + ".wav"
 
 w = wave.open(file_name,'r')
@@ -223,7 +222,7 @@ lower = 0 #12100
 upper = length-1 #12700
 
 
-if skip == 0:
+if graph == 1:
 	#plt.plot(t[lower:upper],a[lower:upper]*.5,'b',t[lower:upper],diff[lower:upper],'r',t[lower:upper],mark[lower:upper],'y',t[lower:upper],valid[lower:upper],'g')
 	plt.plot(a[lower:upper]*.1,'b')
 	#plt.plot(diff[lower:upper]*.2,'r')
