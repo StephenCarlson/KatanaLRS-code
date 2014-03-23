@@ -158,6 +158,7 @@ uint8_t atMegaInit(void);
 void transmitELT(void);
 void transmitELT_Beacon(void);
 void transmitELT_Packet(void); //uint8_t *,uint8_t);
+void transmitELT_AFSK(void);
 void updateVolts(uint8_t);
 
 char deviceIdCheck(void);
@@ -207,7 +208,7 @@ static struct{
 } gps;
 
 #define BEACON_NOTES 6
-static const uint16_t beaconNotes[BEACON_NOTES][3] = {{1067,704,7},{833,222,4},{684,264,3},{782,235,2},{605,296,1},{498,352,0}};
+static const uint16_t beaconNotes[BEACON_NOTES][3] = {{1067,704,7},{833,222,4},{684,264,3},{782,235,2},{605,296,1},{498,352,0}}; // Period, Iterations, TxPwr
 //	Note	A4		C#5 	E5 		D5 		F#5 	A5
 //	Freq	440		554.4	659.3	587.3	740		880
 //	uS		2273	1804	1517	1703	1351    1136
@@ -505,14 +506,16 @@ void loop(void){
 				noiseFloor = radioReadRSSI();
 				//rfmIntList = rfmReadIntrpts();
 			// Determine nextState using refreshed information
-				if(noiseFloor>100){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
-					printf("Rx in SLEEP Works!\t%u\t%X\n",noiseFloor,rfmIntList);
+				//if(noiseFloor>100){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
+					//printf("Rx in SLEEP Works!\t%u\t%X\n",noiseFloor,rfmIntList);
 					// rfmReadFIFO(rfmFIFO);
 					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
-					sys.state = BEACON;
+					//sys.state = BEACON;
 					// else sys.state = ACTIVE;
 					// sys.state = ACTIVE;
-				} else sys.state = (sys.batteryState)? SLEEP : DOWN;
+				//} else sys.state = (sys.batteryState)? SLEEP : DOWN;
+				sys.state = ((sys.powerState == 0))? SLEEP : ACTIVE; //sticksCentered() && 
+
 			// Continue if remaining in current state
 				if(sys.state != SLEEP){
 					printState(noiseFloor);
@@ -559,12 +562,13 @@ void loop(void){
 		case ACTIVE:
 			// Refresh information
 			// Determine nextState using refreshed information
-				if(timer10ms > 600){ // 10 Misses in 20 hops (Fix this)
-					timer10ms = 0;
-					failsafeCounter = 0;
-					updateVolts(1); // Very Dangerous. Perhaps just checking for the powerState component?
-					sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
-				} else sys.state = ACTIVE;
+				//if(timer10ms > 600){ // 10 Misses in 20 hops (Fix this)
+					//timer10ms = 0;
+					//failsafeCounter = 0;
+					//updateVolts(1); // Very Dangerous. Perhaps just checking for the powerState component?
+					//sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
+					sys.state = ((sys.powerState == 0))? SLEEP : ACTIVE; //sticksCentered() && 
+				//} else sys.state = ACTIVE;
 			// Continue if remaining in current state
 				if(sys.state != ACTIVE){
 					printState(noiseFloor);
@@ -898,6 +902,38 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
 
 	for(uint8_t i=0; (i<200) && (radioReadReg(0x07)&0x08); i++) _delay_ms(1);
+}
+
+void transmitELT_AFSK(void){
+	// Bell 202 is 1200 Hz for a Mark '1', 2200 Hz for Space '0', 1200 bps
+	// I think I'll do a prime orthogonal set
+	// Also, lets do 10 to 20 
+
+
+	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
+		for(uint8_t i=0; (i<20) && radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton)); i++) _delay_ms(1);
+		//printf("Fail on Preset: Beacon\n");
+		//_delay_ms(2);
+	}
+	
+	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
+	radioWriteReg(0x72, 7);			// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
+	
+	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
+	//_delay_ms(1);
+	
+	for(uint8_t n=0; n<BEACON_NOTES; n++){
+		radioWriteReg(0x6D, beaconNotes[n][2]);
+		_delay_ms(1);
+		SPCR = 0;
+		CS_RFM = HIGH;
+		_delay_us(1);
+		for(uint16_t d=0; d<beaconNotes[n][1]; d++){
+			FORCE_MOSI = d&0x01;
+			_delay_us(beaconNotes[n][0]); // Getting 416 Hz A4 w/o correction, means its adding 66 uS 
+		}
+		SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR0);
+	}
 }
 
 void updateVolts(uint8_t fastMode){
