@@ -1,6 +1,8 @@
 #ifndef RFM22B_H
 #define RFM22B_H
 
+//#include "KatanaLRS.h"
+
 #define OPCONTROL1_REG	0x07
 #define RFM_txon		3
 #define RFM_rxon		2
