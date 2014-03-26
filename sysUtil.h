@@ -1,12 +1,7 @@
 #ifndef SYS_UTILITY_H
 #define SYS_UTILITY_H
 
-
-
 void updateVolts(uint8_t);
-
-char deviceIdCheck(void);
-void printHelpInfo(void);
 
 static int putUARTchar(char c, FILE *stream);
 uint8_t getUARTchar(void);

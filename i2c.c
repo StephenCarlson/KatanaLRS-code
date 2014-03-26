@@ -1,5 +1,5 @@
-#ifndef I2C_H
-#define I2C_H
+// #ifndef I2C_H
+// #define I2C_H
 
 //#devine DEBUG_I2C
 
@@ -62,4 +62,4 @@ uint8_t readI2C(uint8_t ackType){
 }
 
 
-#endif
+// #endif

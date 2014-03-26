@@ -94,41 +94,35 @@ typedef struct{
 #include <avr/eeprom.h>
 
 
-#include "i2c.c"
-#include "spi.c"
-
-
-
-
-
 // Global Variables
-static FILE uart_io = FDEV_SETUP_STREAM(putUARTchar, NULL, _FDEV_SETUP_WRITE);
 static char dataBufferA[BUFFER_SIZE]; //volatile
-
 static volatile uint16_t timer10ms = 0;
+
+static uint16_t rfmWriteErrors;
 
 static volatile uint8_t ch;
 static volatile uint16_t pwmValues[CHANNELS] = {1200,1200,1200,1200,1200,1200,1200,1200};
 static volatile uint16_t pwmFrameSum;
 
-static uint16_t rfmWriteErrors;
+static struct{
+	uint16_t ch1:10;
+	uint16_t ch2:10;
+	uint16_t ch3:10;
+	uint16_t ch4:10;
+	uint16_t ch5:10;
+	uint16_t ch6:10;
+	uint16_t ch7:10;
+	uint16_t ch8:10;
+} rcCommands;
 
-
-
-#define BEACON_NOTES 6
-static const uint16_t beaconNotes[BEACON_NOTES][3] = {{1067,704,7},{833,222,4},{684,264,3},{782,235,2},{605,296,1},{498,352,0}}; // Period, Iterations, TxPwr
-//	Note	A4		C#5 	E5 		D5 		F#5 	A5
-//	Freq	440		554.4	659.3	587.3	740		880
-//	uS		2273	1804	1517	1703	1351    1136
-//	Halve these values to actually get the note, as the for loop times the half-wave gaps, not peak-peak wave shape
-//	uS/2	1136	902		758		851		675		568
-//	Times	0.8		0.2		0.2		0.2		0.2		0.2
-//	TxPwr	7		4		3		2		1		0
-//	In dBm	+20		+11		+8		+5		+2		+1
-//	In mW	100		12.6	6.3		3.2		1.6		1.3
-//	Actual	438.7	552.4	656.0	584.9	735.5	874.1 // With -66 uS already asserted
-//	uS/2	1067	833		684		782		605		498 // 684 and 498 are slightly sharp and flat, respective
-//	cycles	704		222		264		235		296		352 // Keep Cycle counts tied to actual periods, not corrected ones
+static struct{
+	int32_t lat:30;		// 536870912 > 089999999
+	int32_t lon:30;		// 536870912 > 179999999
+	uint32_t time:20;	// 262143 > 235959
+	int16_t alt;			// 16384 Max
+	uint8_t sats;		
+	uint8_t hdop;		
+} gps;
 
 static struct{
 	uint8_t sleepInterval:3;
@@ -154,6 +148,22 @@ static struct{
 	uint16_t atMega;
 } volt;
 
+#include "i2c.c"
+#include "spi.c"
 
+#include "sysUtility.c"
+
+
+
+#if defined(RFM22B)
+	#include "rfm22b.c"
+#elif defined(RFM23BP)
+	#include "rfm23bp.c"
+#else
+	#error "No Radio Transceiver Selected!"
+#endif
+
+
+#include "elt.c"
 
 #endif // KATANALRS_DEF_H

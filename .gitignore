@@ -1,0 +1,15 @@
+*.eep
+*.elf
+*.hex
+*.lst
+*.map
+*.o
+*.sym
+*.logicdata
+*.ods
+/Decoder
+/fizzim_4.42
+/KatanaRT
+.dep/*
+*.dump
+*.txt

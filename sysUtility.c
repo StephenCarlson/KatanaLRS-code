@@ -1,6 +1,8 @@
 #include "sysUtil.h"
 
 
+static FILE uart_io = FDEV_SETUP_STREAM(putUARTchar, NULL, _FDEV_SETUP_WRITE);
+
 void updateVolts(uint8_t fastMode){
 	uint16_t lipoly = 0; // An array or struct would be more condusive?
 	uint16_t sysVin = 0;
@@ -53,33 +55,6 @@ void updateVolts(uint8_t fastMode){
 	volt.atMega = atMegaVolt;
 	
 	//return ((uint16_t) voltSample);
-}
-
-char deviceIdCheck(void){
-	// printRegisters();
-	CS_RFM = LOW;
-		transferSPI(0x00);
-		uint8_t rfmDevType = transferSPI(0x00);
-		uint8_t rfmVerCode = transferSPI(0x00);
-	CS_RFM = HIGH;
-	
-	printf("\n%X\t%X\n",rfmDevType,rfmVerCode);
-	
-	
-	rfmDevType ^= 0b00001000;
-	rfmVerCode ^= 0b00000110;
-	
-	if(rfmDevType==0 && rfmVerCode==0) return (1);
-	return 0;
-}
-
-void printHelpInfo(void){
-	printf("\nConsole Useage:\n"
-		"B\tBattery mV\n"
-		"M\tMonitor\n"
-		"1 to 3\tToggle Config Flags\n"
-		"`\tWrite Toggles to EEPROM and Review\n"
-		"?\tConsole Useage\n\n");
 }
 
 static int putUARTchar(char c, FILE *stream){
