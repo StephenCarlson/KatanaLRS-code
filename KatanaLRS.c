@@ -319,15 +319,15 @@ void loop(void){
 				noiseFloor = radioReadRSSI();
 				//rfmIntList = rfmReadIntrpts();
 			// Determine nextState using refreshed information
-				//if(noiseFloor>100){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
+				if(noiseFloor>100){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
 					//printf("Rx in SLEEP Works!\t%u\t%X\n",noiseFloor,rfmIntList);
 					// rfmReadFIFO(rfmFIFO);
 					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
-					//sys.state = BEACON;
+					sys.state = BEACON;
 					// else sys.state = ACTIVE;
 					// sys.state = ACTIVE;
 				// } else sys.state = (sys.batteryState)? SLEEP : DOWN;
-				sys.state = ((sys.powerState == 0))? SLEEP : ACTIVE; //sticksCentered() && 
+				} else sys.state = ((sys.powerState == 0))? SLEEP : ACTIVE; //sticksCentered() && 
 
 			// Continue if remaining in current state
 				if(sys.state != SLEEP){
@@ -341,6 +341,7 @@ void loop(void){
 				transmitELT();
 			// Configure for next loop and continue
 				//rfmIntConfig(DISABLED,100);
+				_delay_ms(30);
 				systemSleep(9);
 			break;
 		case BEACON:
@@ -360,6 +361,7 @@ void loop(void){
 				if(sys.state != BEACON){
 					eltTransmitCount = 0;
 					printState(noiseFloor);
+					_delay_ms(30);
 					break;
 				}
 				eltTransmitCount += 1;
@@ -373,7 +375,9 @@ void loop(void){
 				_delay_ms(30);
 			break;
 		case ACTIVE:
+				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
 			// Refresh information
+				updateVolts(1);
 			// Determine nextState using refreshed information
 				//if(timer10ms > 600){ // 10 Misses in 20 hops (Fix this)
 					//timer10ms = 0;
@@ -385,6 +389,7 @@ void loop(void){
 			// Continue if remaining in current state
 				if(sys.state != ACTIVE){
 					printState(noiseFloor);
+					_delay_ms(30);
 					break;
 				}
 			// Assert Outputs
@@ -393,11 +398,25 @@ void loop(void){
 					pwmValues[i] = 1700;
 				}
 				sys.statusLEDs = ENABLED;
+				
+				
+				// if(RFM_INT){
+					// rfmReadFIFO(rfmFIFO);
+				// }
+				//                                  15      14         13      12 |  11   10    9      8  |   7       6         5         4     | 3      2        1         0
+				rfmIntList = rfmReadIntrpts(); // iswdet ipreaval ipreainval irssi iwut ilbd ichiprdy ipor ifferr itxffafull itxffaem irxffafull iext ipksent ipkvalid icrerror
+				//                                Sync	| Preamble           RSSI  Wake Batt  Ready   POR | FIFO                                 Int   Sent    Received    CRC
+				printf("%x,%x,%x\t",RFM_INT,rfmIntList,radioReadReg(0x02));
+
+				printState(noiseFloor);
+				
+				// printf("Rx in DOWN Works!\t%u\t%X\n",noiseFloor,rfmIntList);
+				
 			// Configure for next loop and continue
-				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
 				// Insert Timer0 Coder here later
 			break;
 		case FAILSAFE:
+				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
 			// Refresh information
 				// if(sys.intSrc.wdt){ // These should be a separate timer, no WDT
 					// failsafeCounter += 1;
@@ -406,6 +425,7 @@ void loop(void){
 				// }
 			// Determine nextState using refreshed information
 				if(timer10ms > 800){
+					updateVolts(1);
 					sys.state = (sys.powerState)? BEACON : SLEEP;
 					timer10ms = 0;
 				}
@@ -421,7 +441,7 @@ void loop(void){
 					pwmValues[i] = 1000;
 				}
 			// Configure for next loop and continue
-				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
+				
 			break;
 		default:
 			sys.state = FAILSAFE;

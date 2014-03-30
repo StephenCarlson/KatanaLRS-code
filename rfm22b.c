@@ -183,7 +183,7 @@ uint8_t radioWriteReg(uint8_t regAddress, uint8_t regValue){
 		transferSPI((RFM_WRITE<<7) | regAddress);
 		transferSPI(regValue);
 	CS_RFM = HIGH;
-	_delay_us(1);
+	_delay_us(2);
 	uint8_t readBack = radioReadReg(regAddress)^(regValue);
 	rfmWriteErrors += (readBack)? 1 : 0;
 	if(readBack){
