@@ -99,6 +99,8 @@ static char dataBufferA[BUFFER_SIZE]; //volatile
 static volatile uint16_t timer10ms = 0;
 
 static uint16_t rfmWriteErrors;
+static uint8_t noiseFloor = 60; // Start with ~ -80 dBm, will work down from this
+
 
 static volatile uint8_t ch;
 static volatile uint16_t pwmValues[CHANNELS] = {1200,1200,1200,1200,1200,1200,1200,1200};

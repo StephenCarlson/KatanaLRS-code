@@ -31,7 +31,7 @@ void transmitELT(void){
 	radioWriteReg(0x75, 0x53);
 	radioWriteReg(0x76, 0x64);
 	radioWriteReg(0x77, 0x00);
-	//radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
+	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
 	//transmitELT_AFSK();
 	_delay_ms(1);
 	transmitELT_Packet();
@@ -66,6 +66,7 @@ void transmitELT_Beacon(void){
 		}
 		SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR0);
 	}
+	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
 }
 
 void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
@@ -108,6 +109,7 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
 
 	for(uint8_t i=0; (i<200) && (radioReadReg(0x07)&0x08); i++) _delay_ms(1);
+	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
 }
 
 /*

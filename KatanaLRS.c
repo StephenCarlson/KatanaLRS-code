@@ -47,7 +47,7 @@
 // Function Prototypes
 void setup(void);
 void loop(void);
-void printState(uint8_t);
+void printState(void);
 void rcOutputs(uint8_t);
 void uartIntConfig(uint8_t);
 void wdtIntConfig(uint8_t, uint8_t);
@@ -252,10 +252,15 @@ void setup(void){
 	
 	// Console Usage Hints
 	printHelpInfo();
+	
+	
+	// Development
+	
+	rfmIntConfig(ENABLED,100);
+	radioWriteReg(OPCONTROL1_REG, (1<<RFM_rxon));
 }
 
 void loop(void){
-	static uint8_t noiseFloor = 60; // Start with ~ -80 dBm, will work down from this
 	static uint8_t eltTransmitCount = 0;
 	static uint16_t failsafeCounter = 0;
 	
@@ -268,6 +273,7 @@ void loop(void){
 	// Assert Concurrent Outputs (Outputs not tied to a FSM State, but merely from inputs)
 	// if(sys.statusLEDs) LED_OR = HIGH; //flashOrangeLED(2,5,5); // Solve Delay timing issue
 	
+	// if(RFM_INT) LED_OR = HIGH;
 	
 	// transferSPI(sys.state);
 	// _delay_us(1);
@@ -301,7 +307,7 @@ void loop(void){
 				} else sys.state = (sys.batteryState)? SLEEP : DOWN;
 			// Continue if remaining in current state
 				if(sys.state != DOWN){
-					printState(noiseFloor);
+					printState();
 					break;
 				}
 			// Assert Outputs
@@ -327,11 +333,11 @@ void loop(void){
 					// else sys.state = ACTIVE;
 					// sys.state = ACTIVE;
 				// } else sys.state = (sys.batteryState)? SLEEP : DOWN;
-				} else sys.state = ((sys.powerState == 0))? SLEEP : ACTIVE; //sticksCentered() && 
+				} else sys.state = ((sys.powerState == 0))? ((sys.batteryState)? SLEEP : DOWN) : ACTIVE; //sticksCentered() && 
 
 			// Continue if remaining in current state
 				if(sys.state != SLEEP){
-					printState(noiseFloor);
+					printState();
 					break;
 				}
 			// Assert Outputs
@@ -360,7 +366,7 @@ void loop(void){
 			// Continue if remaining in current state
 				if(sys.state != BEACON){
 					eltTransmitCount = 0;
-					printState(noiseFloor);
+					printState();
 					_delay_ms(30);
 					break;
 				}
@@ -388,7 +394,7 @@ void loop(void){
 				//  } else sys.state = ACTIVE;
 			// Continue if remaining in current state
 				if(sys.state != ACTIVE){
-					printState(noiseFloor);
+					printState();
 					_delay_ms(30);
 					break;
 				}
@@ -400,15 +406,32 @@ void loop(void){
 				sys.statusLEDs = ENABLED;
 				
 				
-				// if(RFM_INT){
-					// rfmReadFIFO(rfmFIFO);
+				
+				
+				// if((radioReadReg(OPCONTROL1_REG)&(1<<RFM_rxon)) != (1<<RFM_rxon)){
+					// rfmIntConfig(ENABLED,100);
+					// radioWriteReg(OPCONTROL1_REG, (1<<RFM_rxon));
+					// // radioWriteReg(0x27, 100);
+					// printf("Enabled Rx\n");
 				// }
-				//                                  15      14         13      12 |  11   10    9      8  |   7       6         5         4     | 3      2        1         0
-				rfmIntList = rfmReadIntrpts(); // iswdet ipreaval ipreainval irssi iwut ilbd ichiprdy ipor ifferr itxffafull itxffaem irxffafull iext ipksent ipkvalid icrerror
-				//                                Sync	| Preamble           RSSI  Wake Batt  Ready   POR | FIFO                                 Int   Sent    Received    CRC
-				printf("%x,%x,%x\t",RFM_INT,rfmIntList,radioReadReg(0x02));
-
-				printState(noiseFloor);
+				
+				
+				if(RFM_INT){
+					LED_OR = HIGH;
+					uint8_t addr[] = {0x02,0x03,0x04,0x07,0x08,0x14,0x15,0x16,0x17,0x18,0x19,0x26,0x27,0x2A,0x2B};
+					for(uint8_t k=0; k<sizeof(addr); k++){
+						CS_RFM = LOW;
+							transferSPI(addr[k]);
+							uint8_t response = transferSPI(0x00);
+						CS_RFM = HIGH;
+						printf("%X,",response);
+					}
+					printf("%X", RFM_INT);
+					printf("\n");
+				}
+	
+	
+				//printState();
 				
 				// printf("Rx in DOWN Works!\t%u\t%X\n",noiseFloor,rfmIntList);
 				
@@ -431,7 +454,7 @@ void loop(void){
 				}
 			// Continue if remaining in current state
 				if(sys.state != FAILSAFE){
-					printState(noiseFloor);
+					printState();
 					break;
 				}
 			// Assert Outputs
@@ -457,7 +480,7 @@ void loop(void){
 	LED_OR = LOW;
 }
 
-void printState(uint8_t noiseFloor){
+void printState(){
 	printf("State: %s\tLipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\tErrors: %u\n",
 			(sys.state == 0)? "DOWN" :(sys.state == 1)? "SLEEP" :(sys.state == 2)? "BEACON" :
 			(sys.state == 3)? "ACTIVE" : "FAILSAFE",volt.lipoly,volt.sysVin,volt.atMega,noiseFloor, rfmWriteErrors);
