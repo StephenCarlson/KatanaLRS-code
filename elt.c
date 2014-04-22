@@ -194,6 +194,7 @@ void transmitELT_AFSK(void){
 
 void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	
+	uint8_t index = 0;
 	
 	radioWriteReg(0x08,0x01);		// FIFO Clear Sequence
 	//_delay_ms(1);					
@@ -225,9 +226,9 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 			transferSPI(0xAA);
 		}
 		transferSPI(0x09);
-		for(uint8_t i=0; i<BUFFER_SIZE; i++){ // String, obvious consequences if there is no \0 present
-			if(dataBufferA[i] == '\0') break;
-			transferSPI(dataBufferA[i]);
+		for(; index<50; index++){ // String, obvious consequences if there is no \0 present
+			if(dataBufferA[index] == '\0') break;
+			transferSPI(dataBufferA[index]);
 			//if(i == BUFFER_SIZE) printf("Fail on String\n");
 		}
 	CS_RFM = HIGH;
@@ -235,10 +236,26 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
 
-	for(uint8_t i=0; (i<200) && (radioReadReg(0x07)&0x08); i++){
+	for(uint8_t i=0; i<200; i++){
 		_delay_ms(1);
+		if(radioReadReg(0x03)&0x20) break;
 		if(i==200) printf("1C\n");
 	}
+	
+	CS_RFM = LOW;
+		transferSPI((RFM_WRITE<<7) | 0x7F);
+		for(; index<BUFFER_SIZE; index++){
+			if(dataBufferA[index] == '\0') break;
+			transferSPI(dataBufferA[index]);
+		}
+	CS_RFM = HIGH;
+	_delay_us(1);
+	
+	for(uint8_t i=0; (i<200) && (radioReadReg(0x07)&0x08); i++){
+		_delay_ms(1);
+		if(i==200) printf("3C\n");
+	}
+	
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
 }
 
