@@ -272,6 +272,13 @@ void setup(void){
 		pwmValues[i] = 1500<<1;
 	}
 	
+	gps.lat  = 89999999;
+	gps.lon  = 179999999;
+	gps.time = 235959;
+	gps.alt  = 1465;
+	gps.sats = 8;
+	gps.hdop = 15;
+	
 	// Console Usage Hints
 	printHelpInfo();
 	
@@ -345,6 +352,7 @@ void loop(void){
 			// Refresh information
 				updateVolts(0);
 				transmitELT();
+				_delay_ms(2);
 				noiseFloor = radioReadRSSI();
 				//rfmIntList = rfmReadIntrpts();
 			// Determine nextState using refreshed information

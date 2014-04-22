@@ -317,7 +317,7 @@ const uint8_t configCore[][2] = { // Start the device inert but ready, interrupt
 	{0x19,1},			// Low Cyc Dur		LDC/M Wake Ratio
 	
 	// 430 MHz Band, +5kHz Calibration, FHSS Off
-	{0x73,32},			// Freq Offset 1	+5 kHz					
+	{0x73,32},			// Freq Offset 1	+5 kHz Calibration					
 	{0x74,0x00},		// Freq Offset 2						
 	{0x75,0x53},		// Freq Band		430 MHz Band	
 	{0x79,0x00},		// FHSS Channel							
@@ -530,6 +530,7 @@ uint8_t radioReadReg(uint8_t regAddress){
 }
 
 uint8_t radioReadRSSI(void){
+	uint8_t rssiMeasure = 0;
 	if((radioReadReg(OPCONTROL1_REG)&(1<<RFM_rxon)) != (1<<RFM_rxon)){
 		// printf("%X\n",radioReadReg(OPCONTROL1_REG));
 		radioWriteReg(OPCONTROL1_REG, (1<<RFM_rxon));
@@ -550,11 +551,11 @@ uint8_t radioReadRSSI(void){
 			// }
 			// _delay_ms(1);
 		// }
-		
+		rssiMeasure = radioReadReg(0x26);
 		radioWriteReg(OPCONTROL1_REG, 0); //(1<<RFM_xton));
 	}
 	
-	return radioReadReg(0x26);
+	return rssiMeasure; //
 }
 
 void rfmReadFIFO(uint8_t *array){

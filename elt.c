@@ -7,7 +7,8 @@ volatile uint16_t pulseCount;
 	// uint8_t afskPacket[6]; 
 // } afskPacket;
 
-volatile uint8_t afskPacket[6] = {0b10101100, 0b01100000, 0b11000010, 0b00111011, 0b10010010, 0b01010111};
+// volatile uint8_t afskPacket[6] = {0b10101100, 0b01100000, 0b11000010, 0b00111011, 0b10010010, 0b01010111};
+volatile uint8_t afskPacket[6] = {'K', 'E', '7', 'Z', 'L', 'H'};
 
 
 // 40.396323,-111.758359
@@ -23,6 +24,7 @@ volatile uint8_t afskPacket[6] = {0b10101100, 0b01100000, 0b11000010, 0b00111011
 // 089999999 Lat
 // 179999999 Lon
 //    ^^^^^^		Send these digits, 20 bits captures 1M
+// 32-bits only captures 9 Decimal digits
 
 
 
@@ -46,21 +48,30 @@ ISR(TIMER2_COMPA_vect){ // OC2A --> MOSI Pin
 	// OCR2A = 125; // 1.0 ms
 	// TIMSK2 = (1<<TIOE2); //(1<<OCIE2B);
 
-
+void systemIdle(void);
+	
+void systemIdle(void){
+	set_sleep_mode(SLEEP_MODE_IDLE);
+	sleep_enable();
+	sleep_bod_disable();
+	sei();
+	sleep_cpu();
+	sleep_disable();
+}
 
 
 
 void transmitELT(void){
-	radioWriteReg(0x75, 0x53);
-	radioWriteReg(0x76, 0x64);
-	radioWriteReg(0x77, 0x00);
+	radioWriteReg(0x75, 0x53);	// Freq Band		<>
+	radioWriteReg(0x76, 0x64);	// Freq Carrier 1	<>
+	radioWriteReg(0x77, 0x00);	// Freq Carrier 0	<>
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
 	transmitELT_AFSK();
 	_delay_ms(1);
 	transmitELT_Packet();
 	_delay_ms(1);
-	//transmitELT_Beacon();
-	//_delay_ms(1);
+	transmitELT_Beacon();
+	_delay_ms(1);
 	radioWriteReg(OPCONTROL1_REG, 0x00);
 }
 
@@ -76,11 +87,11 @@ void transmitELT_Beacon(void){
 	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
 	radioWriteReg(0x72, 7);			// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
 	
-	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
 	//_delay_ms(1);
 	
-	for(uint8_t n=0; n<BEACON_NOTES; n++){ // n=0 for no AFSK, but as the AFSK packet is A4/A5 notes, it replaces A4 here
-		radioWriteReg(0x6D, beaconNotes[n][2]);
+	for(uint8_t n=1; n<BEACON_NOTES; n++){ // n=0 for no AFSK, but as the AFSK packet is A4/A5 notes, it replaces A4 here
+		radioWriteReg(0x6D, 0x08 | beaconNotes[n][2]);
+		radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
 		_delay_ms(1);
 		SPCR = 0;
 		CS_RFM = HIGH;
@@ -91,7 +102,7 @@ void transmitELT_Beacon(void){
 		TCCR2B = _BV(CS22)|_BV(CS20); //|_BV(WGM22); // clk/128 //WGM22
 		TIMSK2 = (1<<OCIE2A); //(1<<OCIE2B);
 		
-		OCR2A = beaconNotes[n][0]>>3; // Poor Resolution for 8-bit range
+		OCR2A = beaconNotes[n][0]; // Poor Resolution for 8-bit range
 		// 142.0, 112.7,  94.8, 106.4,  84.5, 71.0
 		// 440.1, 553.1, 657.9, 589.6, 744.0, 880.3
 		// 440    554.4  659.3  587.3  740    880
@@ -103,7 +114,9 @@ void transmitELT_Beacon(void){
 		// Timer0 is 15 kHz but would roll often as it is 8-bit
 		// timer10ms is driven by the Timer0 Interrupt. Resolution would be unstable
 		pulseCount = 0;
-		while(pulseCount<beaconNotes[n][1]);
+		while(pulseCount<beaconNotes[n][1]){
+			systemIdle();
+		}
 
 		
 		TCCR2A = 0;
@@ -136,10 +149,10 @@ void transmitELT_AFSK(void){
 	
 	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
 	radioWriteReg(0x72, 7);			// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
-	radioWriteReg(0x6D, AFSK_TX_POWER);
+	radioWriteReg(0x6D, 0x08 | AFSK_TX_POWER);
 	
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
-	//_delay_ms(1);
+	_delay_ms(1);
 	SPCR = 0;
 	TCCR2A = _BV(COM2A0)|_BV(WGM21); //|_BV(WGM20); //WGM21 WGM20
 	TCCR2B = _BV(CS22)|_BV(CS20); //|_BV(WGM22); // clk/128 //WGM22
@@ -160,7 +173,9 @@ void transmitELT_AFSK(void){
 		
 		OCR2A = period; // Mark (1) is 440 Hz, Space (0) is 920 Hz
 		pulseCount = 0;
-		while(pulseCount< reps);
+		while(pulseCount< reps){
+			systemIdle();
+		}
 	}
 	
 	TCCR2A = 0;
@@ -183,9 +198,11 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	radioWriteReg(0x08,0x01);		// FIFO Clear Sequence
 	//_delay_ms(1);					
 	radioWriteReg(0x08,0x00);		
+	radioWriteReg(0x6E,0x27);		// Tx Data Rate 1	<>					
+	radioWriteReg(0x6F,0x52);		// Tx Data Rate 0	9600 Baud	
 	radioWriteReg(0x71, 0x23);		// GFSK, FIFO Used
 	radioWriteReg(0x72, 20);		// ~20kHz Peak-Peak Deviation
-	radioWriteReg(0x6D, 7);			// Max Power
+	radioWriteReg(0x6D, 0x08 | 7);	// Max Power
 	
 	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
 		for(uint8_t i=0; (i<20) && radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton)); i++){
