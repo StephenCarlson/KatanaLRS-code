@@ -61,7 +61,7 @@ static int putUARTchar(char c, FILE *stream){
     if (c == '\n') putUARTchar('\r', stream);
     loop_until_bit_is_set(UCSR0A, UDRE0);
     UDR0 = c;
-	_delay_us(500);
+	// _delay_us(500);
 	//transferSPI(c);
     return 0;
 }
@@ -108,7 +108,6 @@ void flashBlueLED(uint8_t count, uint8_t high, uint8_t low){
 		_delay_ms(low);
 	}
 }
-
 
 
 

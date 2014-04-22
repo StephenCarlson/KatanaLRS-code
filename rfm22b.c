@@ -84,7 +84,7 @@
 	// 0x50 - 0x5F						// Reserved									-
 	// 0x60			0x00				// Preamble	Thresh							RW
 	// 0x61								// Reserved									-
-	// 0x62			0x24				// Xtal / Test		2x Amplify				RW		xxx
+	// 0x62			0x04				// Xtal / Test		2x Amplify				RW		xxx
 	// 0x63	- 0x68						// Reserved									-
 	// 0x69			0x20				// AGC Override		AGC Enabled				RW
 	// 0x6A	- 0x6C						// Reserved									-
@@ -140,17 +140,33 @@
 // RFM IC Configuration
 	// 0x09			0x7F				// Xtal Cap 		Default @ 12.5pF		RW
 
-// RFM Top-Level State Control
-	// 0x07			0x01				// Control 1		Xtal On (Ready)			RW
-	// 0x08			0x00				// Control 2								RW
-
 // RFM Ports, GPIO, and uC Interface
-	// 0x05			0x00				// Int Enable 1								RW
-	// 0x06			0x03				// Int Enable 2		Chip Ready and POR		RW
 	// 0x0B			0x00				// GPIO1 			POR						RW
 	// 0x0C			0x00				// GPIO2 			/POR					RW
 	// 0x0D			0x00				// GPIO3 			uC Clk Output			RW
 	// 0x0E			0x00				// I/O Ports								RW
+	// 0x05			0x00				// Int Enable 1								RW
+	// 0x06			0x03				// Int Enable 2		Chip Ready and POR		RW
+
+// RFM Top-Level State Control
+	// 0x07			0x01				// Control 1		Xtal On (Ready)			RW
+	// 0x08			0x00				// Control 2								RW
+
+
+// Accessories
+	// 0x0A			0x06				// uC Output Clk	1 MHz					RW
+	// 0x0F			0x00				// ADC Config 								RW
+	// 0x10			0x00				// ADC Offset								RW
+	// 0x12			0x20				// Temp Calc		Celsius					RW
+	// 0x13			0x00				// Temp Offset								RW
+	// 0x4F			0x10				// ADC8 Temp Set	<>						RW
+	// 0x1A			0x14				// Low Batt			2.7v (1.7+20*50mV)		RW
+	
+	// Low-Duty-Cycle Module
+	// 0x14			0x03				// Wake Set 1		R=3						RW
+	// 0x15			0x00				// Wake Set 2		T_WUT=4*M*2^R / 2^15	RW
+	// 0x16			0x01				// Wake Set 3		M=1 					RW
+	// 0x19			0x00				// Low Cyc Dur		LDC/M Wake Ratio		RW
 
 
 
@@ -163,14 +179,18 @@
 	// 0x23			0xAE				// Clk Offset 0		<>						RW
 	// 0x24			0x02				// Clk Gain 1		<>						RW
 	// 0x25			0x8F				// Clk Gain 0		<>						RW
-	// 0x2C			0x18				// OOK Control		Freeze, Peak Detr On	RW
-	// 0x2D			0xBC				// OOK Counter		<>						RW
-	// 0x2E			0x26				// OOK Slicer		<>						RW
 	// 0x1D			0x40				// AFC Gear			AFC On, 0dB pass		RW
 	// 0x1E			0x0A				// AFC Timing		<>						RW
 	// 0x2A			0x00				// AFC Limit								RW
+	
+	// Amplifier
 	// 0x62			0x24				// Xtal / Test		2x Amplify				RW
 	// 0x69			0x20				// AGC Override		AGC Enabled				RW
+	
+	// OOK Module
+	// 0x2C			0x18				// OOK Control		Freeze, Peak Detr On	RW
+	// 0x2D			0xBC				// OOK Counter		<>						RW
+	// 0x2E			0x26				// OOK Slicer		<>						RW
 	
 // Modem RF Configuration - RSSI Related
 	// 0x27			0x1E				// RSSI Thresh		30 -> ~ -110 dBm		RW
@@ -201,7 +221,7 @@
 	// 0x45			0xFF				// Header Enable 1	All bits compared		RW
 	// 0x46			0xFF				// Header Enable 0	All bits compared		RW
 
-// Radio Modulation and I/O
+// Radio Modulation and FHSS
 	// 0x6D			0x18				// Tx Power			LNA Sw Active, -1dBm	RW
 	// 0x6E			0x0A				// Tx Data Rate 1	<>						RW
 	// 0x6F			0x3D				// Tx Data Rate 0	40 kbps					RW
@@ -213,30 +233,15 @@
 	// 0x75			0x75				// Freq Band		<>						RW
 	// 0x76			0xBB				// Freq Carrier 1	<>						RW
 	// 0x77			0x80				// Freq Carrier 0	<>						RW
-	
-// FIFO, FHSS, and Data I/O
 	// 0x79			0x00				// FHSS Channel								RW
 	// 0x7A			0x00				// FHSS Step Size							RW
+	
+// FIFO and Data I/O
 	// 0x7C			0x37				// Tx FIFO Ctrl 1	Tx Almost Full @ 55		RW
 	// 0x7D			0x04				// Tx FIFO Ctrl 2	Tx Almost Empt @ 4		RW
 	// 0x7E			0x37				// Rx FIFO Ctrl		Rx Almost Full @ 55		RW
 	// 0x7F			-					// FIFO				FIFOs are 64B each		RW
 
-
-
-// Accessories
-	// 0x0A			0x06				// uC Output Clk	1 MHz					RW
-	// 0x0F			0x00				// ADC Config 								RW
-	// 0x10			0x00				// ADC Offset								RW
-	// 0x12			0x20				// Temp Calc		Celsius					RW
-	// 0x13			0x00				// Temp Offset								RW
-	// 0x4F			0x10				// ADC8 Temp Set	<>						RW
-	// 0x1A			0x14				// Low Batt			2.7v (1.7+20*50mV)		RW
-	
-	// 0x14			0x03				// Wake Set 1		R=3						RW
-	// 0x15			0x00				// Wake Set 2		T_WUT=4*M*2^R / 2^15	RW
-	// 0x16			0x01				// Wake Set 3		M=1 					RW
-	// 0x19			0x00				// Low Cyc Dur		LDC/M Wake Ratio		RW
 
 
 
@@ -291,6 +296,11 @@ const uint8_t configCore[][2] = { // Start the device inert but ready, interrupt
 	{0x07,0x01},		// Control 1		Xtal On (Ready)
 	{0x08,0},			// Control 2		
 	
+	// Disable OOK Module
+	{0x2C,0},			// OOK Control		Disabled
+	{0x2D,0},			// OOK Counter		Disabled
+	{0x2E,0},			// OOK Slicer		Disabled
+	
 	// Disable various auxiliary devices that are not used
 	{0x0A,0x07},		// uC Output Clk	32 kHz
 	{0x0F,0x00},		// ADC Config 		Disabled
@@ -304,49 +314,73 @@ const uint8_t configCore[][2] = { // Start the device inert but ready, interrupt
 	{0x14,7},			// Wake Set 1		R=7
 	{0x15,0},			// Wake Set 2		T_WUT=4*M*2^R / 2^15
 	{0x16,128},			// Wake Set 3		M=128
-	{0x19,1}			// Low Cyc Dur		LDC/M Wake Ratio
+	{0x19,1},			// Low Cyc Dur		LDC/M Wake Ratio
 	
-	// No need to set frequency or packet 
+	// 430 MHz Band, +5kHz Calibration, FHSS Off
+	{0x73,32},			// Freq Offset 1	+5 kHz					
+	{0x74,0x00},		// Freq Offset 2						
+	{0x75,0x53},		// Freq Band		430 MHz Band	
+	{0x79,0x00},		// FHSS Channel							
+	{0x7A,0x00},		// FHSS Step Size							
 
 };
 
 const uint8_t configDlCompat[][2] = {
+	// Freq Range between 430.5 and 434.950 MHz, Center is 432.725
+	// 9600 Baud
+	// 5.4 kHz Deviation
+	// Gaussian Shift
+	// fcarrier = (fb+24+(fc+fo)/64000) * 10000 * (hbsel+1) + (fhch * fhs * 10) [kHz]
+	// fb=19 (10 MHz Increments), fo=32 (+5 kHz Up Tick), fc=3200 (500 kHz)
+	// fo can only shift by +/-80 kHz, 2's comp
+	// Use fc as channel select mechanism, unsigned for 10 MHz span
 	
-	{0x1C,0x01},		// IF B/W			75.2 kHz	
+	
+	// Frequency Configuration
+	{0x1C,0x27},		// IF B/W			75.2 kHz	// Only Value Freq Sensitive
 	{0x1F,0x03},		// Clk Gear			<>	
-	{0x20,0x64},		// Clk Ratio		<>	
+	{0x20,0x68},		// Clk Ratio		<>	
 	{0x21,0x01},		// Clk Offset 2		<>	
-	{0x22,0x47},		// Clk Offset 1		<>	
-	{0x23,0xAE},		// Clk Offset 0		<>	
-	{0x24,0x02},		// Clk Gain 1		<>	
-	{0x25,0x8F},		// Clk Gain 0		<>	
-	{0x2C,0},			// OOK Control		Disabled
-	{0x2D,0},			// OOK Counter		Disabled
-	{0x2E,0},			// OOK Slicer		Disabled
-	{0x1D,0x40},		// AFC Gear			AFC On, 0dB pass
+	{0x22,0x3A},		// Clk Offset 1		<>	
+	{0x23,0x93},		// Clk Offset 0		<>	
+	{0x24,0x04},		// Clk Gain 1		<>	Max.Rb Error affects this: rxncocomp
+	{0x25,0x62},		// Clk Gain 0		<>	
+	{0x1D,0x44},		// AFC Gear			AFC On, 0dB pass
 	{0x1E,0x0A},		// AFC Timing		<>				
-	{0x2A,0x00},		// AFC Limit						
-	{0x62,0x24},		// Xtal / Test		2x Amplify	
-	{0x69,0x20},		// AGC Override		AGC Enabled		
+	{0x2A,0x1D},		// AFC Limit						
+	
+	// Amplifier
+	// Allow to default {0x62,0x04},		// Xtal / Test		2x Amplify	
+	{0x69,0x60},		// AGC Override		AGC Enabled		
 	
 	
+	// 00001100 10000010 10110000 11111110 11111110 01001000 11111110 00000110 10000011 11111110 00010101 10000110 11100001 01001101
+	// A   B      C        D        E1       E2       E3       E4       E5       E6       E7       E8       E9       F1       F2
+	// 
+	// A	Flags: Bind and Failsafe Inactive
+	// B	Byte Count: 12 Bytes beyond ID byte (D)
+	// C	System ID: 0x82
+	// D	MSB's for lower 8 channels
+	// En	9 Channels Payload
+	// F1	Upper Byte of CRC-16 IBM/ARC
+	// F2	Lower Byte of CRC-16 IBM/ARC
 	
-	
-	{0x30,0x8D},		// Data Ctrl		Rx/Tx Pkt'ing, CRC O
-	{0x32,0x0C},		// Header Ctrl 1	Rx'd Hdr is Byte 3,2
-	{0x33,0x22},		// Header Ctrl 2	Hdr 3,2; Sync 3,2	
-	{0x34,0x08},		// Preamble Length	32 bits / 4 bytes	
-	{0x35,0x2A},		// Preamble Detect	20 bits, +8dB RSSI	
+	// Packet and FIFO
+	{0x30,0x40},		// Data Ctrl		No PH, as data is 10-bit UART, must chew on it in uC. LSB First
+	{0x32,0x00},		// Header Ctrl 1	Rx'd Hdr is Byte 3,2
+	{0x33,0x02},		// Header Ctrl 2	Hdr 3,2; Sync 3,2	
+	{0x34,0x03},		// Preamble Length	8
+	{0x35,0x10},		// Preamble Detect	20 bits, +8dB RSSI	
 	{0x60,0x00},		// Preamble	Thresh						
-	{0x36,0x2D},		// Sync Word 3		0010110111010100	
-	{0x37,0xD4},		// Sync Word 2							
+	{0x36,0x0C},		// Sync Word 3		0010110111010100	
+	{0x37,0x82},		// Sync Word 2							
 	{0x38,0x00},		// Sync Word 1							
 	{0x39,0x00},		// Sync Word 0							
 	{0x3A,0x00},		// Tx Header 3							
 	{0x3B,0x00},		// Tx Header 2							
 	{0x3C,0x00},		// Tx Header 1							
 	{0x3D,0x00},		// Tx Header 0							
-	{0x3E,0x00},		// Tx Pkt Length	No data sent in pkt	
+	{0x3E,0x50},		// Tx Pkt Length	No data sent in pkt	
 	{0x3F,0x00},		// Check Header 3						
 	{0x40,0x00},		// Check Header 2						
 	{0x41,0x00},		// Check Header 1						
@@ -354,31 +388,25 @@ const uint8_t configDlCompat[][2] = {
 	{0x43,0xFF},		// Header Enable 3	All bits compared	
 	{0x44,0xFF},		// Header Enable 2	All bits compared	
 	{0x45,0xFF},		// Header Enable 1	All bits compared	
-	{0x46,0xFF},			// Header Enable 0	All bits compared	
-
-	{0x6D,0x18},		// Tx Power			LNA Sw Active, -1dBm
-	{0x6E,0x0A},		// Tx Data Rate 1	<>					
-	{0x6F,0x3D},		// Tx Data Rate 0	40 kbps				
-	{0x70,0x0C},		// Modulation 1		Normal				
-	{0x71,0x00},		// Modulation 2		No Modulation		
-	{0x72,0x20},		// Freq Deviation	<>					
-	{0x73,0x00},		// Freq Offset 1						
-	{0x74,0x00},		// Freq Offset 2						
-	{0x75,0x75},		// Freq Band		<>					
-	{0x76,0xBB},		// Freq Carrier 1	<>					
-	{0x77,0x80},		// Freq Carrier 0	<>					
-	{0x79,0x00},		// FHSS Channel							
-	{0x7A,0x00},		// FHSS Step Size						
+	{0x46,0xFF},		// Header Enable 0	All bits compared	
 	{0x7C,0x37},		// Tx FIFO Ctrl 1	Tx Almost Full @ 55	
 	{0x7D,0x04},		// Tx FIFO Ctrl 2	Tx Almost Empt @ 4	
-	{0x7E,0x37}			// Rx FIFO Ctrl		Rx Almost Full @ 55	
+	{0x7E,0x37},		// Rx FIFO Ctrl		Rx Almost Full @ 55	
+	
+	// Modulation
+	{0x6D,0x08},		// Tx Power			LNA Sw Active, -1dBm
+	{0x6E,0x4E},		// Tx Data Rate 1	<>					
+	{0x6F,0xA5},		// Tx Data Rate 0	9600 Baud				
+	{0x70,0x20},		// Modulation 1		Normal				
+	{0x71,0x22},		// Modulation 2		FIFO FSK		
+	{0x72,0x09},		// Freq Deviation	<>					
+	{0x76,0x0C},		// Freq Carrier 1	<>					
+	{0x77,0x80},		// Freq Carrier 0	<>					
 };
 
 const uint8_t configRxTone1750[][2] = {
-	// For 3500 bit/sec @ 5 kHz Dev, for detecting a 1750 Hz Tone
+	// Frequency: 434 MHz 3500 bit/sec @ 5 kHz Dev, for detecting a 1750 Hz Tone
 	{0x1C, 0x2B},		// IF Filter Bandwidth
-	{0x1D, 0x44},		// AFC Loop Gearshift Override
-	{0x1E, 0x0A},		// AFC Timing Control
 	{0x1F, 0x03},		// Clock Recovery Gearshift Override
 	{0x20, 0x1E},		// Clock Recovery Oversampling Rate
 	{0x21, 0x20},		// Clock Recovery Offset 2
@@ -386,19 +414,36 @@ const uint8_t configRxTone1750[][2] = {
 	{0x23, 0xB0},		// Clock Recovery Offset 0
 	{0x24, 0x00},		// Clock Recovery Timing Loop Gain 1
 	{0x25, 0xA2},		// Clock Recovery Timing Loop Gain 0
+	{0x1D, 0x44},		// AFC Loop Gearshift Override
+	{0x1E, 0x0A},		// AFC Timing Control
 	{0x2A, 0x1D},		// AFC Limiter
+	{0x69,0x60},		// AGC Override		AGC Enabled	
+	
+	// Packet
+	{0x30,0x00},
 	{0x34, 0x40},		// 64 nibble = 32 byte preamble
 	{0x35, 0x20},		// 0x35 need to detect 20bit preamble
-	{0x65, 0x60},		// Clock Recovery Timing Loop Gain 0
-	{0x71, 0x12},		// FSK via SDI
-	{0x72, 8},			// Frequency deviation setting to 5 kHz, total 10 kHz deviation, 5000/625
+	{0x60,0x00},		// Preamble	Thresh
+	// ...
 	
-	{0x07, 0},
+	// Modulation
+	{0x6D,0x08},		// Tx Power			LNA Sw Active, -1dBm
+	{0x6E,0x1C},		// Tx Data Rate 1	<>					
+	{0x6F,0xAC},		// Tx Data Rate 0	40 kbps				
+	{0x70,0x20},		// Modulation 1		Normal				
+	{0x71,0x22},		// Modulation 2		No Modulation		
+	{0x72,0x08},		// Freq Deviation	<>								
+	{0x76,0x64},		// Freq Carrier 1	434 MHz					
+	{0x77,0x00},		// Freq Carrier 0	<>					
+	
+	// LDC
 	{0x14, 7},			// R in T_WUT = 4 * M * 2^R / 32768, .015625*M ms for R=7 (2^7=128)
 	{0x15, 0},			// M[15:8]
 	{0x16, 128},		// M[7:0]
-	{0x19, 1}			// LDC in T_LDC_ON = 4 * LDC * 2^R / 32768
+	{0x19, 1},			// LDC in T_LDC_ON = 4 * LDC * 2^R / 32768
 	
+	// Device State
+	// {0x07, RFM_xton},
 	
 	// Preamble is 1750 -- 3500 bps, .032 sec -> 56 bits, can capture 16 bits in that time
 	// .016 TLDC is .015625 * 32768 /4 
@@ -428,7 +473,22 @@ void rfmIntConfig(uint8_t mode, uint8_t rssiThresh){
 	}
 }
 
-
+void rfmSetDlChannel(uint8_t channel){
+	// fcarrier = (fb+24+(fc+fo)/64000) * 10000 * (hbsel+1) + (fhch * fhs * 10) [kHz]
+	// fb=19 (10 MHz Increments), fo=32 (+5 kHz Up Tick), fc=3200 (500 kHz)
+	// DL uses 27 kHz spacing
+	// 27 kHz -> 172.8
+	// 3200 
+	// 1:6.4, or .15625
+	
+	// uint16_t value = 3200 + channel*172.8;
+	#define DL_OFFSET	3200
+	#define DL_STEP(ch)	(ch*172 + ch*4/5)
+	uint16_t value = DL_OFFSET + DL_STEP(channel);
+	
+	radioWriteReg(0x76,value>>8);	// Freq Carrier 1	Upper Byte
+	radioWriteReg(0x77,value&0xFF);	// Freq Carrier 0	Lower Byte
+}
 
 void radioMode(uint8_t mode){
 	
@@ -436,101 +496,13 @@ void radioMode(uint8_t mode){
 		radioWriteReg(configCore[i][0],configCore[i][1]);
 	}
 	
-	radioWriteReg(GPIO_0_CFG, GPIO_TXST);
-	radioWriteReg(GPIO_1_CFG, GPIO_RXST);
-	radioWriteReg(GPIO_2_CFG, GPIO_PMBLDET);
-	//																								Add		R/W	Function/Desc		[7]			[6]			[5]			[4]			[3]			[2]			[1]			[0]		Reset Value
-	radioWriteReg(0x06, 0x00);		// Disable all interrupts										06		R/W	Interrupt Enable 2	enswdet		enpreaval	enpreainval	enrssi		enwut		enlbd		enchiprdy	enpor	03h
-	radioWriteReg(0x07, 0x01);		// Set READY mode
-	radioWriteReg(0x09, 0x7F);		// Cap = 12.5pF
-	//radioWriteReg(0x0A, 0x05);		// Clk output is 2MHz
-
-	radioWriteReg(0x0F, 0x70);		// NO ADC used
-	radioWriteReg(0x10, 0x00);		// no ADC used
-	radioWriteReg(0x12, 0x00);		// No temp sensor used
-	radioWriteReg(0x13, 0x00);		// no temp sensor used
-
-	radioWriteReg(0x70, 0x20);		// No manchester code, no data whiting, data rate < 30Kbps
-
-	radioWriteReg(0x1C, 0x1D);		// IF filter bandwidth
-	radioWriteReg(0x1D, 0x40);		// AFC Loop
-	// radioWriteReg(0x1E, 0x0A);	// AFC timing
-
-	radioWriteReg(0x20, 0xA1);		// clock recovery
-	radioWriteReg(0x21, 0x20);		// clock recovery
-	radioWriteReg(0x22, 0x4E);		// clock recovery
-	radioWriteReg(0x23, 0xA5);		// clock recovery
-	radioWriteReg(0x24, 0x00);		// clock recovery timing
-	radioWriteReg(0x25, 0x0A);		// clock recovery timing
-
-	// radioWriteReg(0x2A, 0x18);	// AFC Limiter
-	radioWriteReg(0x2C, 0x00);		// OOK Counter
-	radioWriteReg(0x2D, 0x00);		// OOK Counter
-	radioWriteReg(0x2E, 0x00);		// Slicer Peak Hold
-
-	radioWriteReg(0x6E, 0x27);		// 0x27 for 4800, 0x4E for 9600
-	radioWriteReg(0x6F, 0x52);		// 0x52 for 4800, 0xA5 for 9600
-
-	radioWriteReg(0x30, 0x00);		// Data access control <steve> 0x8C
-
-	radioWriteReg(0x32, 0xFF);		// Header control
-
-	radioWriteReg(0x33, 0x42);		// Header 3, 2, 1, 0 used for head length, fixed packet length, synchronize word length 3, 2,
-
-	radioWriteReg(0x34, 64);		// 64 nibble = 32 byte preamble
-	radioWriteReg(0x35, 0x20);		// 0x35 need to detect 20bit preamble
-	radioWriteReg(0x36, 0x2D);		// synchronize word
-	radioWriteReg(0x37, 0xD4);
-	radioWriteReg(0x38, 0x00);
-	radioWriteReg(0x39, 0x00);
-	radioWriteReg(0x3A, '*');		// set tx header 3
-	radioWriteReg(0x3B, 'E');		// set tx header 2
-	radioWriteReg(0x3C, 'W');		// set tx header 1
-	radioWriteReg(0x3D, 'S');		// set tx header 0
-	// radioWriteReg(0x3E, 17);		// set packet length to 17 bytes (max size: 255 bytes)
-	radioWriteReg(0x3E, 50);	// set packet length to PKTSIZE bytes (max size: 255 bytes)
-
-	radioWriteReg(0x3F, '*');		// set rx header
-	radioWriteReg(0x40, 'E');
-	radioWriteReg(0x41, 'W');
-	radioWriteReg(0x42, 'S');
-	radioWriteReg(0x43, 0xFF);		// check all bits
-	radioWriteReg(0x44, 0xFF);		// Check all bits
-	radioWriteReg(0x45, 0xFF);		// check all bits
-	radioWriteReg(0x46, 0xFF);		// Check all bits
-
-	// radioWriteReg(0x56, 0x02);		// <steve> Something to do with I/Q Swapping
-
-	radioWriteReg(0x6D, 0x00);		// Tx power to max
-
-	radioWriteReg(0x79, 0x00);		// no frequency hopping
-	radioWriteReg(0x7A, 0x00);		// no frequency hopping
-
-	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
-
-	radioWriteReg(0x72, 8);			// Frequency deviation setting to 5 kHz, total 10 kHz deviation, 5000/625
-
-	radioWriteReg(0x73, 32);		// Frequency offset in 156.25 Hz Increments, Crawls between 4840 and 5040 Hz, 5740 May be a better
-	radioWriteReg(0x74, 0x00);		// Frequency offset
-
-	radioWriteReg(0x75, 0x53);		// frequency set to 434MHz
-	radioWriteReg(0x76, 0x64);		// frequency set to 434MHz
-	radioWriteReg(0x77, 0x00);		// frequency set to 434Mhz
-
-	// radioWriteReg(0x5A, 0x7F);
-	// radioWriteReg(0x59, 0x40);
-	// radioWriteReg(0x58, 0x80);		// cpcuu[7:0], whatever this is
-
-	// radioWriteReg(0x6A, 0x0B);
-	// radioWriteReg(0x68, 0x04);
-	radioWriteReg(0x1F, 0x03);		// Clock Recovery Value
+	for(uint8_t i=0; i<sizeof(configDlCompat)/2;i++){
+		radioWriteReg(configDlCompat[i][0],configDlCompat[i][1]);
+	}
 	
 	
-	#if defined(RFM22B)
-
-	#endif
+	
 }
-
 
 uint8_t radioWriteReg(uint8_t regAddress, uint8_t regValue){
 	CS_RFM = LOW;
@@ -547,9 +519,6 @@ uint8_t radioWriteReg(uint8_t regAddress, uint8_t regValue){
 	}
 	return readBack; //(readBack)? readBack : 0; Seems I check for not working more than working.
 }
-
-
-
 
 uint8_t radioReadReg(uint8_t regAddress){
 	CS_RFM = LOW;
@@ -602,417 +571,65 @@ uint16_t rfmReadIntrpts(void){
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#ifdef NO_WE_ARE_NOT_COMPILING_THIS
-	write(0x06, 0x00);		// Disable all interrupts
-	write(0x07, 0x01);		// Set READY mode
-	write(0x09, 0x7F);		// Cap = 12.5pF
-	write(0x0A, 0x05);		// Clk output is 2MHz
-	
-	write(0x0B, 0xF4);		// GPIO0 is for RX data output
-	write(0x0C, 0xEF);		// GPIO1 is TX/RX data CLK output
-	write(0x0D, 0x00);		// GPIO2 for MCLK output
-	write(0x0E, 0x00);		// GPIO port use default value
-	
-	write(0x0F, 0x70);		// NO ADC used
-	write(0x10, 0x00);		// no ADC used
-	write(0x12, 0x00);		// No temp sensor used
-	write(0x13, 0x00);		// no temp sensor used
-	
-	write(0x70, 0x20);		// No manchester code, no data whiting, data rate < 30Kbps
-	
-	write(0x1C, 0x1D);		// IF filter bandwidth
-	write(0x1D, 0x40);		// AFC Loop
-	//write(0x1E, 0x0A);	// AFC timing
-	
-	write(0x20, 0xA1);		// clock recovery
-	write(0x21, 0x20);		// clock recovery
-	write(0x22, 0x4E);		// clock recovery
-	write(0x23, 0xA5);		// clock recovery
-	write(0x24, 0x00);		// clock recovery timing
-	write(0x25, 0x0A);		// clock recovery timing
-	
-	//write(0x2A, 0x18);
-	write(0x2C, 0x00);
-	write(0x2D, 0x00);
-	write(0x2E, 0x00);
-	
-	write(0x6E, 0x27);		// TX data rate 1
-	write(0x6F, 0x52);		// TX data rate 0
-	
-	write(0x30, 0x8C);		// Data access control
-	
-	write(0x32, 0xFF);		// Header control
-	
-	write(0x33, 0x42);		// Header 3, 2, 1, 0 used for head length, fixed packet length, synchronize word length 3, 2,
-	
-	write(0x34, 64);		// 64 nibble = 32 byte preamble
-	write(0x35, 0x20);		// 0x35 need to detect 20bit preamble
-	write(0x36, 0x2D);		// synchronize word
-	write(0x37, 0xD4);
-	write(0x38, 0x00);
-	write(0x39, 0x00);
-	write(0x3A, '*');		// set tx header 3
-	write(0x3B, 'E');		// set tx header 2
-	write(0x3C, 'W');		// set tx header 1
-	write(0x3D, 'S');		// set tx header 0
-	//write(0x3E, 17);		// set packet length to 17 bytes (max size: 255 bytes)
-	write(0x3E, PKTSIZE);	// set packet length to PKTSIZE bytes (max size: 255 bytes)
-	
-	write(0x3F, '*');		// set rx header
-	write(0x40, 'E');
-	write(0x41, 'W');
-	write(0x42, 'S');
-	write(0x43, 0xFF);		// check all bits
-	write(0x44, 0xFF);		// Check all bits
-	write(0x45, 0xFF);		// check all bits
-	write(0x46, 0xFF);		// Check all bits
-	
-	write(0x56, 0x01);
-	
-	write(0x6D, 0x07);		// Tx power to max
-	
-	write(0x79, 0x00);		// no frequency hopping
-	write(0x7A, 0x00);		// no frequency hopping
-	
-	write(0x71, 0x22);		// GFSK, fd[8]=0, no invert for TX/RX data, FIFO mode, txclk-->gpio
-	
-	write(0x72, 0x48);		// Frequency deviation setting to 45K=72*625
-	
-	write(0x73, 0x00);		// No frequency offset
-	write(0x74, 0x00);		// No frequency offset
-	
-	write(0x75, 0x53);		// frequency set to 434MHz
-	write(0x76, 0x64);		// frequency set to 434MHz
-	write(0x77, 0x00);		// frequency set to 434Mhz
-	
-	write(0x5A, 0x7F);
-	write(0x59, 0x40);
-	write(0x58, 0x80);
-	
-	write(0x6A, 0x0B);
-	write(0x68, 0x04);
-	write(0x1F, 0x03);
-	
-	
-	
-	
- ItStatus1 = _spi_read(0x03); // read status, clear interrupt   
- ItStatus2 = _spi_read(0x04); 
-  _spi_write(0x06, 0x00);    // no wakeup up, lbd, 
-  _spi_write(0x07, RF22B_PWRSTATE_READY);      // disable lbd, wakeup timer, use internal 32768,xton = 1; in ready mode 
-  _spi_write(0x09, 0x7f);  // c = 12.5p   
-  _spi_write(0x0a, 0x05); 
-  _spi_write(0x0b, 0x12);    // gpio0 TX State
-  _spi_write(0x0c, 0x15);    // gpio1 RX State 
-
-  _spi_write(0x0d, 0xfd);    // gpio 2 micro-controller clk output 
-  _spi_write(0x0e, 0x00);    // gpio    0, 1,2 NO OTHER FUNCTION. 
-  
-  _spi_write(0x70, 0x2C);    // disable manchest 
-  
-       // 9.6Kbps data rate
-  _spi_write(0x6e, 0x27); //case RATE_384K 
-  _spi_write(0x6f, 0x52); //case RATE_384K
-  
-  _spi_write(0x1c, 0x1A); // case RATE_384K
-  _spi_write(0x20, 0xA1);//  0x20 calculate from the datasheet= 500*(1+2*down3_bypass)/(2^ndec*RB*(1+enmanch)) 
-  _spi_write(0x21, 0x20); // 0x21 , rxosr[10--8] = 0; stalltr = (default), ccoff[19:16] = 0; 
-  _spi_write(0x22, 0x4E); // 0x22    ncoff =5033 = 0x13a9 
-  _spi_write(0x23, 0xA5); // 0x23 
-  _spi_write(0x24, 0x00); // 0x24 
-  _spi_write(0x25, 0x1B); // 0x25 
-  _spi_write(0x1D, 0x40); // 0x25 
-  _spi_write(0x1E, 0x0A); // 0x25 
-  
-  _spi_write(0x2a, 0x1e); 
-   
-
-  _spi_write(0x30, 0x8c);    // enable packet handler, msb first, enable crc, 
-
-  _spi_write(0x32, 0xf3);    // 0x32address enable for headere byte 0, 1,2,3, receive header check for byte 0, 1,2,3 
-  _spi_write(0x33, 0x42);    // header 3, 2, 1,0 used for head length, fixed packet length, synchronize word length 3, 2, 
-  _spi_write(0x34, 0x06);    // 7 default value or   // 64 nibble = 32byte preamble 
-  _spi_write(0x36, 0x2d);    // synchronize word 
- _spi_write(0x37, 0xd4); 
- _spi_write(0x38, 0x00); 
- _spi_write(0x39, 0x00); 
- _spi_write(0x3a, RF_Header[0]);    // tx header 
- _spi_write(0x3b, RF_Header[1]); 
- _spi_write(0x3c, RF_Header[2]); 
- _spi_write(0x3d, RF_Header[3]); 
- _spi_write(0x3e, 8);    // total tx 3 byte 
- 
-  
-  
-    //RX HEADER
- _spi_write(0x3f, RF_Header[0]);   // check hearder 
- _spi_write(0x40, RF_Header[1]); 
- _spi_write(0x41, RF_Header[2]); 
- _spi_write(0x42, RF_Header[3]); 
- _spi_write(0x43, 0xff);    // all the bit to be checked 
- _spi_write(0x44, 0xff);    // all the bit to be checked 
- _spi_write(0x45, 0xff);    // all the bit to be checked 
- _spi_write(0x46, 0xff);    // all the bit to be checked 
-  
-
-  
-  #if (BOOSTER == 0)
-  _spi_write(0x6d, 0x07); // 7 set power max power 
-  #else
-  _spi_write(0x6d, 0x06); // 6 set power 50mw for booster 
-  #endif
-  
-  _spi_write(0x79, 0x00);    // no hopping 
-  
-  #if (BAND== 0)
-  _spi_write(0x7a, 0x06);    // 60khz step size (10khz x value) // no hopping 
-  #else
-  _spi_write(0x7a, 0x05); // 50khz step size (10khz x value) // no hopping 
-  #endif
-
-  _spi_write(0x71, 0x23); // Gfsk, fd[8] =0, no invert for Tx/Rx data, fifo mode, txclk -->gpio 
-  _spi_write(0x72, 0x30); // frequency deviation setting to 19.6khz (for 38.4kbps)
- 
-  _spi_write(0x73, 0x00);   
-  _spi_write(0x74, 0x00);    // no offset 
- 
-
-  //band 435.000
- 
- #if (BAND== 0)
- _spi_write(0x75, 0x53);
- #else 
-_spi_write(0x75, 0x55);  //450 band 
- #endif
- 
- _spi_write(0x76, 0x7D);    
- _spi_write(0x77, 0x00); 
-	
-	
-	
-	
-	
-	char configArray[] = {					// 21 Values
-		0xC0,		// 	1D	THRESH_TAP	12g		62.5 mg/LSB unsigned 0xFF = +16 g
-		0x00,		// 	1E	OFSX					15.6 mg/LSB signed 0x7F = +2 g
-		0x00,		// 	1F	OFSY
-		0x00,		// 	20	OFSZ
-		0x50,		// 	21	DUR			60ms	625 uS/LSB		Max time/width of tap peak
-		0x28,		// 	22	Latent		50ms	1.25 ms/LSB		No other peak until after this
-		0x50,		// 	23	Window		100ms	1.25 ms/LSB 	Period after latent to make a second peak
-		0x40,		// 	24	THRESH_ACT	1.5g		62.5 mg/LSB unsigned	Exceed value to flag activity
-		0x04,		// 	25	THRESH_INACT	.25g	62.5 mg/LSB unsigned	Stay below for TIME_INACT for inactivity
-		0x05,		// 	26	TIME_INACT	5sec	1 sec/LSB
-		0b11111111,	// 	27	ACT_INACT_CTL 		ACT[dc/AC][X|Y|Z] INACT[dc/AC][X|Y|Z]
-		0x08,		// 	28	THRESH_FF	500mg	62.5 mg/LSB unsigned sqrt(x^2+y^2+z^2)
-		0x14,		// 	29	TIME_FF		100ms	5 ms/LSB
-		0b00001111,	// 	2A	TAP_AXES				0[7:4], [Suppress] Enable[X|Y|Z]
-		0x00,		// 	2B	ACT_TAP_STATUS READ-ONLY [0] Activity[X|Y|Z] [Asleep] Tap[X|Y|Z]
-		ADXL_RATE,	// 	2C	BW_RATE				0[7:5], [Low Power] RateCode[3:0]
-		0b00100000,	// 	2D	POWER_CTL			0[7:6], [Link][AutoSleep][Measure][Sleep] WakeRate[1:0]
-		0b00000000,	// 	2E	INT_ENABLE			[DataReady][1 Tap][2 Taps][Activity][Inactivity][FreeFall][Watermark][OverRun]
-		0b10000011,	// 	2F	INT_MAP				[DataReady][1 Tap][2 Taps][Activity][Inactivity][FreeFall][Watermark][OverRun]
-		0x00,		// 	30	INT_SOURCE READ-ONLY
-		0b00101011	// 	31	DATA_FORMAT  FULL_RES bit set
-	};
-
-
-	
-	
-	
-	
-	
-	
-	
-	
-	
-void beacon_send(void)
-{
-  Green_LED_ON
-  ItStatus1 = spiReadRegister(0x03);   // read status, clear interrupt
-  ItStatus2 = spiReadRegister(0x04);
-  spiWriteRegister(0x06, 0x00);    // no wakeup up, lbd,
-  spiWriteRegister(0x07, RF22B_PWRSTATE_READY);      // disable lbd, wakeup timer, use internal 32768,xton = 1; in ready mode
-  spiWriteRegister(0x09, 0x7f);  // (default) c = 12.5p
-  spiWriteRegister(0x0a, 0x05);
-  spiWriteRegister(0x0b, 0x12);    // gpio0 TX State
-  spiWriteRegister(0x0c, 0x15);    // gpio1 RX State
-  spiWriteRegister(0x0d, 0xfd);    // gpio 2 micro-controller clk output
-  spiWriteRegister(0x0e, 0x00);    // gpio    0, 1,2 NO OTHER FUNCTION.
-
-  spiWriteRegister(0x70, 0x2C);    // disable manchest
-
-  spiWriteRegister(0x30, 0x00);    //disable packet handling
-
-  spiWriteRegister(0x79, 0);    // start channel
-
-  spiWriteRegister(0x7a, 0x05);   // 50khz step size (10khz x value) // no hopping
-
-  spiWriteRegister(0x71, 0x12);   // trclk=[00] no clock, dtmod=[01] direct using SPI, fd8=0 eninv=0 modtyp=[10] FSK
-  spiWriteRegister(0x72, 0x02);   // fd (frequency deviation) 2*625Hz == 1.25kHz
-
-  spiWriteRegister(0x73, 0x00);
-  spiWriteRegister(0x74, 0x00);    // no offset
-
-  rfmSetCarrierFrequency(bind_data.beacon_frequency);
-
-  spiWriteRegister(0x6d, 0x07);   // 7 set max power 100mW
-
-  delay(10);
-  spiWriteRegister(0x07, RF22B_PWRSTATE_TX);    // to tx mode
-  delay(10);
-  beacon_tone(500, 1);
-
-  spiWriteRegister(0x6d, 0x04);   // 4 set mid power 15mW
-  delay(10);
-  beacon_tone(250, 1);
-
-  spiWriteRegister(0x6d, 0x00);   // 0 set min power 1mW
-  delay(10);
-  beacon_tone(160, 1);
-
-  spiWriteRegister(0x07, RF22B_PWRSTATE_READY);
-  Green_LED_OFF
-}
-	
-	
-void setModemRegs(struct rfm22_modem_regs* r)
-{
-
-  spiWriteRegister(0x1c, r->r_1c);
-  spiWriteRegister(0x1d, r->r_1d);
-  spiWriteRegister(0x1e, r->r_1e);
-  spiWriteRegister(0x20, r->r_20);
-  spiWriteRegister(0x21, r->r_21);
-  spiWriteRegister(0x22, r->r_22);
-  spiWriteRegister(0x23, r->r_23);
-  spiWriteRegister(0x24, r->r_24);
-  spiWriteRegister(0x25, r->r_25);
-  spiWriteRegister(0x2a, r->r_2a);
-  spiWriteRegister(0x6e, r->r_6e);
-  spiWriteRegister(0x6f, r->r_6f);
-  spiWriteRegister(0x70, r->r_70);
-  spiWriteRegister(0x71, r->r_71);
-  spiWriteRegister(0x72, r->r_72);
-}
-
-
-
-void rfmSetCarrierFrequency(uint32_t f)
-{
-  uint16_t fb, fc, hbsel;
-  if (f < 480000000) {
-    hbsel = 0;
-    fb = f / 10000000 - 24;
-    fc = (f - (fb + 24) * 10000000) * 4 / 625;
-  } else {
-    hbsel = 1;
-    fb = f / 20000000 - 24;
-    fc = (f - (fb + 24) * 20000000) * 2 / 625;
-  }
-  spiWriteRegister(0x75, 0x40 + (hbsel?0x20:0) + (fb & 0x1f));
-  spiWriteRegister(0x76, (fc >> 8));
-  spiWriteRegister(0x77, (fc & 0xff));
-}
-
-void init_rfm(uint8_t isbind)
-{
-  ItStatus1 = spiReadRegister(0x03);   // read status, clear interrupt
-  ItStatus2 = spiReadRegister(0x04);
-  spiWriteRegister(0x06, 0x00);    // disable interrupts
-  spiWriteRegister(0x07, RF22B_PWRSTATE_READY); // disable lbd, wakeup timer, use internal 32768,xton = 1; in ready mode
-  spiWriteRegister(0x09, 0x7f);   // c = 12.5p
-  spiWriteRegister(0x0a, 0x05);
-  spiWriteRegister(0x0b, 0x12);    // gpio0 TX State
-  spiWriteRegister(0x0c, 0x15);    // gpio1 RX State
-  spiWriteRegister(0x0d, 0xfd);    // gpio 2 micro-controller clk output
-  spiWriteRegister(0x0e, 0x00);    // gpio    0, 1,2 NO OTHER FUNCTION.
-
-  if (isbind) {
-    setModemRegs(&bind_params);
-  } else {
-    setModemRegs(&modem_params[bind_data.modem_params]);
-  }
-
-  // Packet settings
-  spiWriteRegister(0x30, 0x8c);    // enable packet handler, msb first, enable crc,
-  spiWriteRegister(0x32, 0x0f);    // no broadcast, check header bytes 3,2,1,0
-  spiWriteRegister(0x33, 0x42);    // 4 byte header, 2 byte synch, variable pkt size
-  spiWriteRegister(0x34, 0x0a);    // 10 nibbles (40 bit preamble)
-  spiWriteRegister(0x35, 0x2a);    // preath = 5 (20bits), rssioff = 2
-  spiWriteRegister(0x36, 0x2d);    // synchronize word 3
-  spiWriteRegister(0x37, 0xd4);    // synchronize word 2
-  spiWriteRegister(0x38, 0x00);    // synch word 1 (not used)
-  spiWriteRegister(0x39, 0x00);    // synch word 0 (not used)
-
-  uint32_t magic = isbind ? BIND_MAGIC : bind_data.rf_magic;
-  for (uint8_t i=0; i<4; i++) {
-    spiWriteRegister(0x3a + i, (magic >> 24) & 0xff);   // tx header
-    spiWriteRegister(0x3f + i, (magic >> 24) & 0xff);   // rx header
-    magic = magic << 8; // advance to next byte
-  }
-
-  spiWriteRegister(0x43, 0xff);    // all the bit to be checked
-  spiWriteRegister(0x44, 0xff);    // all the bit to be checked
-  spiWriteRegister(0x45, 0xff);    // all the bit to be checked
-  spiWriteRegister(0x46, 0xff);    // all the bit to be checked
-
-  if (isbind) {
-    spiWriteRegister(0x6d, BINDING_POWER);
-  } else {
-    spiWriteRegister(0x6d, bind_data.rf_power);
-  }
-
-  spiWriteRegister(0x79, 0);
-
-  spiWriteRegister(0x7a, bind_data.rf_channel_spacing);   // channel spacing
-
-  spiWriteRegister(0x73, 0x00);
-  spiWriteRegister(0x74, 0x00);    // no offset
-
-  rfmSetCarrierFrequency(isbind ? BINDING_FREQUENCY : bind_data.rf_frequency);
-
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#endif // NO_WE_ARE_NOT_COMPILING_THIS
-	
 #endif // RFM22B_H
+
+
+
+
+
+#if defined(Notes_for_here)
+
+// Pesudo-code
+
+
+uint16_t rfmLearnHopSeq(uint8_t type){
+	// Find the master list, the set of frequencies that have channels
+	for each channel in the list of possible channels for given type:
+		observe the channel for at least 1 sec
+		if RSSI breaks threshold inside of that second, we've found a valid channel
+			Add the channel to the candidate list, with timestamp
+			if we've got 5+ entries in the candidate list:
+				add this channel the master list, exit to next channel in for loop
+			otherwise, repeat the 1 second observation period
+			
+	now, with the master list
+		
+		
+		
+		
+		
+		
+		
+		if(timeout <1 sec && ) // dwell on channel for about a second:
+			if RSSI exceeds the threshould:
+				make entry in list with timestamp
+				timeout = 0, such that we persist on this channel
+			if there are 5 entries in the array:
+				if they are evenly spaced in time, +/- a bit:
+					We have observed the periodic cycle for the FHSS pattern
+					Mark this channel as valid, append to FHSS list
+			
+				
+	for each channel on the FHSS list from previously:
+		The moment the RSSI for the index i frequency breaks threshould:
+			Switch frequency to index i++, i=0 if we saturated
+			If RSSI shows a hit at +/- 10% expected packet arrival:
+				.......
+				Basically, learn the sequence via bubble-sort basically
+				Or is it another sort of sort?
+
+
+
+
+
+
+
+
+}
+
+
+#endif
+
+
+
+

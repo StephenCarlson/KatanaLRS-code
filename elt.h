@@ -7,7 +7,8 @@
 const uint8_t fccId[] = "KE7ZLH";
 
 #define BEACON_NOTES 6
-static const uint16_t beaconNotes[BEACON_NOTES][3] = {{1067,704,7},{833,222,4},{684,264,3},{782,235,2},{605,296,1},{498,352,0}}; // Period, Iterations, TxPwr
+// static const uint16_t beaconNotes[BEACON_NOTES][3] = {{1067,704,7},{833,222,4},{684,264,3},{782,235,2},{605,296,1},{498,352,0}}; // Period, Iterations, TxPwr
+static const uint16_t beaconNotes[BEACON_NOTES][3] = {{142,704,7},{113,222,4},{95,264,3},{106,235,2},{84,296,1},{71,352,0}}; // Period, Iterations, TxPwr
 //	Note	A4		C#5 	E5 		D5 		F#5 	A5
 //	Freq	440		554.4	659.3	587.3	740		880
 //	uS		2273	1804	1517	1703	1351    1136
@@ -24,7 +25,7 @@ static const uint16_t beaconNotes[BEACON_NOTES][3] = {{1067,704,7},{833,222,4},{
 
 
 
-
+void audioBlip(uint8_t, uint8_t, uint8_t);
 void transmitELT(void);
 void transmitELT_Beacon(void);
 void transmitELT_Packet(void); //uint8_t *,uint8_t);

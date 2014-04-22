@@ -42,6 +42,26 @@
 // =======================================================================
 
 
+// Timers 					Description
+// Timer 0 (8-bit)			System Time Counter (10 ms), not needed given Timer 1?
+// 		OC0A	PD6			Pin 7, not really available
+// 		OC0B	PD5			Pin 6, not really available
+
+// Timer 1 (16-bit)			R/C Output Generator, could be used as system time counter?
+//		OC1A	PB1			PPM Output Line
+//		OC1B	PB2			/CS Line, can't use
+
+// Timer 2 (8-bit)			Would like to use for AFSK on ELT
+//		OC2A	PB3			MOSI, can create tones for ELT on this
+//		OC2B	PD3			Unconnected spare line, use for piezo buzzer? Free otherwise
+
+
+
+
+
+
+
+
 #include "KatanaLRS.h"
 
 // Function Prototypes
@@ -79,56 +99,56 @@ ISR(TIMER1_OVF_vect ){ // May want to redo as if/else structure, more efficient?
 	switch(ch){
 		case 0:
 			PWM_1 = HIGH;
-			ICR1 = pwmValues[ch]<<1;
+			ICR1 = pwmValues[ch];
 			pwmFrameSum = pwmValues[ch]; // Note the subtle difference, =, not +=
 			ch+=1;
 			break;
 		case 1:
 			PWM_1 = LOW;
 			PWM_2 = HIGH;
-			ICR1 = pwmValues[ch]<<1;
-			pwmFrameSum += pwmValues[ch];
+			ICR1 = pwmValues[ch]; // Not Relevant: Loss of precision in favor of uSec representation in pwmValues[]
+			pwmFrameSum += pwmValues[ch]; // 65535 is the max for pwmFrameSum, max ch PWM width is 8192 ~ 4096 uS
 			ch+=1;
 			break;
 		case 2:
 			PWM_2 = LOW;
 			PWM_3 = HIGH;
-			ICR1 = pwmValues[ch]<<1;
+			ICR1 = pwmValues[ch];
 			pwmFrameSum += pwmValues[ch];
 			ch+=1;
 			break;
 		case 3:
 			PWM_3 = LOW;
 			PWM_4 = HIGH;
-			ICR1 = pwmValues[ch]<<1;
+			ICR1 = pwmValues[ch];
 			pwmFrameSum += pwmValues[ch];
 			ch+=1;
 			break;
 		case 4:
 			PWM_4 = LOW;
 			PWM_5 = HIGH;
-			ICR1 = pwmValues[ch]<<1;
+			ICR1 = pwmValues[ch];
 			pwmFrameSum += pwmValues[ch];
 			ch+=1;
 			break;
 		case 5:
 			PWM_5 = LOW;
 			PWM_6 = HIGH;
-			ICR1 = pwmValues[ch]<<1;
+			ICR1 = pwmValues[ch];
 			pwmFrameSum += pwmValues[ch];
 			ch+=1;
 			break;
 		case 6:
 			PWM_6 = LOW;
 			PWM_7 = HIGH;
-			ICR1 = pwmValues[ch]<<1;
+			ICR1 = pwmValues[ch];
 			pwmFrameSum += pwmValues[ch];
 			ch+=1;
 			break;
 		case 7:
 			PWM_7 = LOW;
 			PWM_8 = HIGH;
-			ICR1 = pwmValues[ch]<<1;
+			ICR1 = pwmValues[ch];
 			pwmFrameSum += pwmValues[ch];
 			ch+=1;
 			// printf("Sum: %u\n",pwmFrameSum); Getting 14000
@@ -136,9 +156,10 @@ ISR(TIMER1_OVF_vect ){ // May want to redo as if/else structure, more efficient?
 		case 8:
 			PORTC &= ~(0x0F);
 			PORTD &= ~(0xF0);
-			ICR1 = (20000 - pwmFrameSum)<<1;
+			pwmFrameSum = (pwmFrameSum > 40000)? 0 : pwmFrameSum;
+			ICR1 = (40000 - pwmFrameSum); // Hazard if negative!
 			ch = 0;
-			OCR1A = 800;
+			OCR1A = 800;	// Produce a 400 us low pulse
 			TCCR1A |= _BV(COM1A1);
 			break;
 		default:
@@ -148,6 +169,7 @@ ISR(TIMER1_OVF_vect ){ // May want to redo as if/else structure, more efficient?
 
 ISR(TIMER0_COMPA_vect){
 	sys.intSrc.timer0 = 1;
+	timer10min += (timer10ms >= 60000)? 1 : 0; // Time up to 42.5 hours
 	timer10ms = (timer10ms >= 60000)? 0 : timer10ms+1; // 600 sec, 10 min
 }
 
@@ -247,7 +269,7 @@ void setup(void){
 	// Application Warm-up
 	TIMSK1 = _BV(TOIE1);
 	for(uint8_t i=0; i<CHANNELS; i++){
-		pwmValues[i] = 1500;
+		pwmValues[i] = 1500<<1;
 	}
 	
 	// Console Usage Hints
@@ -304,7 +326,7 @@ void loop(void){
 					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = SLEEP;
 					sys.state = SLEEP;
 					// else sys.state = ACTIVE;
-				} else sys.state = (sys.batteryState)? SLEEP : DOWN;
+				} else sys.state = (sys.batteryState || sys.powerState)? SLEEP : DOWN;
 			// Continue if remaining in current state
 				if(sys.state != DOWN){
 					printState();
@@ -322,6 +344,7 @@ void loop(void){
 				wdtIntConfig(ENABLED,9);
 			// Refresh information
 				updateVolts(0);
+				transmitELT();
 				noiseFloor = radioReadRSSI();
 				//rfmIntList = rfmReadIntrpts();
 			// Determine nextState using refreshed information
@@ -332,8 +355,8 @@ void loop(void){
 					sys.state = BEACON;
 					// else sys.state = ACTIVE;
 					// sys.state = ACTIVE;
-				// } else sys.state = (sys.batteryState)? SLEEP : DOWN;
-				} else sys.state = ((sys.powerState == 0))? ((sys.batteryState)? SLEEP : DOWN) : ACTIVE; //sticksCentered() && 
+				} else sys.state = (sys.batteryState || sys.powerState)? SLEEP : DOWN;
+				// } else sys.state = ((sys.powerState == 0))? ((sys.batteryState)? SLEEP : DOWN) : ACTIVE; //sticksCentered() && 
 
 			// Continue if remaining in current state
 				if(sys.state != SLEEP){
@@ -344,7 +367,6 @@ void loop(void){
 				rcOutputs(DISABLED);
 				sys.statusLEDs = ENABLED; //DISABLED;
 				uartIntConfig(DISABLED);
-				transmitELT();
 			// Configure for next loop and continue
 				//rfmIntConfig(DISABLED,100);
 				_delay_ms(30);
@@ -362,7 +384,7 @@ void loop(void){
 					// rfmReadFIFO(rfmFIFO);
 					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
 					// else sys.state = ACTIVE;
-				} else sys.state = (eltTransmitCount > 100)? SLEEP : BEACON;
+				} else sys.state = (eltTransmitCount > 10)? SLEEP : BEACON;
 			// Continue if remaining in current state
 				if(sys.state != BEACON){
 					eltTransmitCount = 0;
@@ -389,8 +411,8 @@ void loop(void){
 					//timer10ms = 0;
 					//failsafeCounter = 0;
 					//updateVolts(1); // Very Dangerous. Perhaps just checking for the powerState component?
-					//sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
-					sys.state = ((sys.powerState == 0))? SLEEP : ACTIVE; //sticksCentered() && 
+					sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
+					// sys.state = ((sys.powerState == 0))? SLEEP : ACTIVE; //sticksCentered() && 
 				//  } else sys.state = ACTIVE;
 			// Continue if remaining in current state
 				if(sys.state != ACTIVE){
@@ -401,7 +423,7 @@ void loop(void){
 			// Assert Outputs
 				rcOutputs(ENABLED);
 				for(uint8_t i=0; i<CHANNELS; i++){
-					pwmValues[i] = 1700;
+					pwmValues[i] = 1700<<1;
 				}
 				sys.statusLEDs = ENABLED;
 				
@@ -461,7 +483,7 @@ void loop(void){
 				rcOutputs(ENABLED);
 				sys.statusLEDs = ENABLED;
 				for(uint8_t i=0; i<CHANNELS; i++){
-					pwmValues[i] = 1000;
+					pwmValues[i] = 1000<<1;
 				}
 			// Configure for next loop and continue
 				
@@ -621,14 +643,14 @@ uint8_t atMegaInit(void){
 	PRR = 0;
 
 	// Timers
-	TCCR0A = _BV(WGM01);
+	TCCR0A = _BV(WGM01); // CTC Mode
 	TCCR0B = (1<<CS02)|(1<<CS00); // clk/1024
 	OCR0A = 156; // 10 ms // Or is it 155?
 	TIMSK0 = (1<<OCIE0A);
 	
 	
 	TCCR1A = _BV(WGM11); //_BV(COM1A1)|
-	TCCR1B = _BV(WGM13)|_BV(WGM12)|(1<<CS11);
+	TCCR1B = _BV(WGM13)|_BV(WGM12)|(1<<CS11); // 2 MHz
 	ICR1 = 50000; // 25 ms
 	OCR1A = 800; // 400 uS
 	
@@ -705,6 +727,7 @@ void printHelpInfo(void){
 		"`\tWrite Toggles to EEPROM and Review\n"
 		"?\tConsole Useage\n\n");
 }
+
 
 /*
 
