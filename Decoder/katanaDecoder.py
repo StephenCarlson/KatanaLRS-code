@@ -19,7 +19,7 @@ def printHelp():
 	print "KatanaLRS Decoder by Stephen Carlson Jan 2014\n \
 	-h	Help \n \
 	-g	Graph \n \
-	-a	Work on Average of all valid frames \n \
+	-a	Work on Average of all valid frames (must have multiple packets)\n \
 	-i	<inputfile>        (Default: Newest \"_AF.wav\") \n \
 	-f	<Filter Order>     (Default: 5)   \n \
 	-b	<Baudrate>         (Default: 4800)\n \

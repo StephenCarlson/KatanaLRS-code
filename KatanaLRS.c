@@ -320,7 +320,19 @@ void loop(void){
 		
 	// Carry out the current State processes and determine next state
 	switch(sys.state){ // Native State Machine
-		case DOWN:
+		case DOWN:	// This is the worst-case state, and must be power-optimized as much as possible.
+					// Getting to this point means the battery is at 70% or so. The ATmega must power-down hard
+					// and configure the RFM for Low-Duty-Cycle mode Receive. This mode needs to allow for several 
+					// weeks of standby monitoring time, months if possible. A valid interrogation jumps the 
+					// state machine to SLEEP to emit at least one ELT burst, regardless of battery condition.
+					// It would make sense to have the LDC Rx frequencies to be the regular LRS list, as the LRS
+					// Transmitter is already a stellar preformer in the roll of interrogator. The Rx freq should
+					// roll on the list, shifting to the next entry every minute / 10th wake or so. This will allow
+					// for noise and locked-out channels.
+					// As mentioned in SLEEP, is having the ATmega go totally down necessary? Also, is it 
+					// dangerous to have the entire system rest on the RFM if the ATmega disables its WDT and does
+					// hard sleep?
+					// If GPS information is flowing, parse it.
 				wdtIntConfig(ENABLED,9); //DISABLED,0);
 			// Refresh information
 				updateVolts(0);
@@ -347,7 +359,14 @@ void loop(void){
 				//rfmIntConfig(DISABLED,100);
 				systemSleep(9);
 			break;
-		case SLEEP:
+		case SLEEP:	// Power-optimized 8-second beacon bursts, until the battery is at 70% or so.
+					// This and the DOWN state are exclusive to battery-only operation. If there is no good power
+					// from the 5v bus, SLEEP operates until the battery is consumed to the point we discontinue.
+					// If a valid packet/interrogation is received, the state machine jumps to BEACON for several cycles.
+					// A question to answer is whether the LDC mode on the RFM is worth using, or it having the ATmega wake 
+					// and configure the RFM to Rx manually is more power conservative. As it stands are present, the ATmega
+					// checks the RSSI at the end of the ELT burst, as the RFM is already active.
+					// If GPS information is flowing, parse it.
 				wdtIntConfig(ENABLED,9);
 			// Refresh information
 				updateVolts(0);
@@ -380,7 +399,14 @@ void loop(void){
 				_delay_ms(30);
 				systemSleep(9);
 			break;
-		case BEACON:
+		case BEACON:	// Stay here until the aircraft main battery is depleted. 
+						// As the KatanaLRS is a minor consumer even in Tx, no problem in continuous operation, 
+						// won't hasten the main battery demise too much.
+						// Makes sense that the ELT would be full-duty-cycle immediately after a crash.
+						// This is also visited when the module is interrogated by a valid packet/tone
+						// Hence, this state needs to play the same way as the SLEEP state to reduce battery power
+						// and to preserve stealth. No R/C Outputs or LEDs if visited from SLEEP.
+						// If GPS information is flowing, parse it.
 				wdtIntConfig(ENABLED,8);
 				//rfmIntConfig(DISABLED,100);
 			// Refresh information
@@ -410,7 +436,16 @@ void loop(void){
 			// Configure for next loop and continue
 				_delay_ms(30);
 			break;
-		case ACTIVE:
+		case ACTIVE:	// Includes the first state of Failsafe: poor/lossy or momentary lost link.
+						// Hopefully, this is the only mode ever really used. Optimized for R/C servo output.
+						// This mode would also parse the optional GPS input and interact with the Flight Controller.
+						// For normal discontinued operation (flight is over, main battery disconnected), this state
+						// has to determine that there is no emergency when link is lost. (May want to shift this to
+						// FAILSAFE.) The mission is over when sticks are centered and 5v input power is already gone.
+						// An emergency would occur if the aircraft either impacts terrain (lossing 5v power and 
+						// possibly antenna) or if link is lost (control inputs would probably no be centered, and 
+						// 5v should be good). Sticks Centered and 5v absent might still occur in a emergency, but 
+						// ultimately, the LRS never disengages from monitoring: DOWN is the "ground state".
 				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
 			// Refresh information
 				updateVolts(1);
@@ -468,7 +503,9 @@ void loop(void){
 			// Configure for next loop and continue
 				// Insert Timer0 Coder here later
 			break;
-		case FAILSAFE:
+		case FAILSAFE:	// Entered if contact has been lost for long enough that servos must be driven to safe values.
+						// This must be the most stable state? Don't parse GPS?
+						// This state 
 				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
 			// Refresh information
 				// if(sys.intSrc.wdt){ // These should be a separate timer, no WDT
@@ -677,6 +714,11 @@ uint8_t atMegaInit(void){
 	DDRB |= 0b00101111;	
     DDRC |= 0b00001111;	
     DDRD |= 0b11110010;	
+	// <steve> TODO! Add a statement here that disables the output ports for the servos
+	// when the RC Outputs are suppose to be disabled. Likely, the RC Outputs state will be a flag
+	// in the global config struct.
+	// Actually, this just makes life hard. 
+	// Servos jump on every sleep entry, would probably do the same in the full implementation.
 
 	
 	// Serial Port

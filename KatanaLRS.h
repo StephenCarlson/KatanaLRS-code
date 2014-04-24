@@ -122,7 +122,7 @@ static struct{
 	int32_t lat:30;		// 536870912 > 089999999
 	int32_t lon:30;		// 536870912 > 179999999
 	uint32_t time:20;	// 262143 > 235959
-	int16_t alt;			// 16384 Max
+	int16_t alt;		// 16384 Max
 	uint8_t sats;		
 	uint8_t hdop;		
 } gps;
