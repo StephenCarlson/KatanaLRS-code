@@ -96,8 +96,8 @@ typedef struct{
 
 // Global Variables
 static char dataBufferA[BUFFER_SIZE]; //volatile
-static volatile uint8_t timer10min = 0; // Rolls at 42.5 Hours
-static volatile uint16_t timer10ms = 0; // Reset at 10 min
+// static volatile uint16_t timer1min = 0; // Rolls at 18.2 Hours
+static volatile uint32_t timer1ms = 0; // Reset at 1 min
 
 static uint16_t rfmWriteErrors;
 static uint8_t noiseFloor = 60; // Start with ~ -80 dBm, will work down from this
@@ -106,6 +106,10 @@ static uint8_t noiseFloor = 60; // Start with ~ -80 dBm, will work down from thi
 static volatile uint8_t ch;
 static volatile uint16_t pwmValues[CHANNELS] = {1200,1200,1200,1200,1200,1200,1200,1200}; // In uSec, 
 static volatile uint16_t pwmFrameSum; // Must be able to contain the accumulated sum of pwmValues[]
+
+const uint8_t dlFreqList[] = { 24,142,169,133,32,96,58,125,87,77,141,177,55,42,121,78,159,138,175,35,86,36};
+static volatile uint8_t dlChannel = 0;
+static volatile uint32_t timestamp = 0;
 
 static struct{
 	uint16_t ch1:10;

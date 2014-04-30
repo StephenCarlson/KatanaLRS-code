@@ -81,8 +81,14 @@ void printHelpInfo(void);
 
 // Interrupt Vectors (Listed in Priority Order)
 ISR(INT0_vect){
+	LED_OR = HIGH;
 	sys.intSrc.rfm = 1;
-	EIMSK = 0;
+	timestamp = timer1ms;
+	
+	dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0; 
+	//radioWriteReg(0x05,0);
+	//radioWriteReg(0x07,(1<<1));
+	//EIMSK = 0;
 }
 
 ISR(PCINT2_vect){
@@ -160,17 +166,21 @@ ISR(TIMER1_OVF_vect ){ // May want to redo as if/else structure, more efficient?
 			ICR1 = (40000 - pwmFrameSum); // Hazard if negative!
 			ch = 0;
 			OCR1A = 800;	// Produce a 400 us low pulse
-			TCCR1A |= _BV(COM1A1);
+			TCCR1A |= _BV(COM1A1)|_BV(COM1A0); // COM1A0 Flips to Idle-High
 			break;
 		default:
 			ch = 8;
 	}
+	LED_OR = LOW;
 }
 
 ISR(TIMER0_COMPA_vect){
+	//LED_OR = HIGH;
 	sys.intSrc.timer0 = 1;
-	timer10min += (timer10ms >= 60000)? 1 : 0; // Time up to 42.5 hours
-	timer10ms = (timer10ms >= 60000)? 0 : timer10ms+1; // 600 sec, 10 min
+	// timer1min += (timer1ms >= 60000)? 1 : 0; // Rolls at 1000 hours
+	// timer1ms = (timer1ms >= 60000)? 0 : timer1ms+1; // 60 sec
+	timer1ms += 1;
+	//LED_OR = LOW;
 }
 
 ISR(USART_RX_vect){
@@ -230,7 +240,7 @@ void setup(void){
 		_delay_ms(1);
 	}
 	for(uint8_t i=0; i<200; i++){
-		if((radioReadReg(0x05)&0x02) == 0x02) break;
+		if((radioReadReg(0x04)&0x02) == 0x02) break;
 		_delay_ms(1);
 	}
 	radioMode(ACTIVE);
@@ -286,6 +296,8 @@ void setup(void){
 	// Development
 	
 	rfmIntConfig(ENABLED,100);
+	EICRA = _BV(ISC01); // Falling-Edge
+	EIMSK = _BV(INT0);
 	radioWriteReg(OPCONTROL1_REG, (1<<RFM_rxon));
 }
 
@@ -293,8 +305,12 @@ void loop(void){
 	static uint8_t eltTransmitCount = 0;
 	static uint16_t failsafeCounter = 0;
 	
+	static uint16_t manualFreq = 3000;
+	
+	static uint16_t secLoop;
+	
 	uint16_t rfmIntList = 0;
-	uint8_t rfmFIFO[16];
+	uint8_t rfmFIFO[64];
 	#define RFM_INT_VALID_PACKET_RX (1<<(1))
 	#define RFM_INT_RSSI_THRESH ((1<<(4))<<8)
 	#define DL_BIND_FLAG (1<<7)
@@ -357,6 +373,7 @@ void loop(void){
 				uartIntConfig(DISABLED);
 			// Configure for next loop and continue
 				//rfmIntConfig(DISABLED,100);
+				//EIMSK = (1<<INT0);
 				systemSleep(9);
 			break;
 		case SLEEP:	// Power-optimized 8-second beacon bursts, until the battery is at 70% or so.
@@ -396,6 +413,7 @@ void loop(void){
 				uartIntConfig(DISABLED);
 			// Configure for next loop and continue
 				//rfmIntConfig(DISABLED,100);
+				//EIMSK = (1<<INT0);
 				_delay_ms(30);
 				systemSleep(9);
 			break;
@@ -409,6 +427,7 @@ void loop(void){
 						// If GPS information is flowing, parse it.
 				wdtIntConfig(ENABLED,8);
 				//rfmIntConfig(DISABLED,100);
+				//EIMSK = (1<<INT0);
 			// Refresh information
 				updateVolts(1);
 				//rfmIntList = rfmReadIntrpts();
@@ -448,13 +467,13 @@ void loop(void){
 						// ultimately, the LRS never disengages from monitoring: DOWN is the "ground state".
 				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
 			// Refresh information
-				updateVolts(1);
+				//updateVolts(1);
 			// Determine nextState using refreshed information
 				//if(timer10ms > 600){ // 10 Misses in 20 hops (Fix this)
 					//timer10ms = 0;
 					//failsafeCounter = 0;
 					//updateVolts(1); // Very Dangerous. Perhaps just checking for the powerState component?
-					sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
+					// sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
 					// sys.state = ((sys.powerState == 0))? SLEEP : ACTIVE; //sticksCentered() && 
 				//  } else sys.state = ACTIVE;
 			// Continue if remaining in current state
@@ -464,10 +483,10 @@ void loop(void){
 					break;
 				}
 			// Assert Outputs
-				rcOutputs(ENABLED);
-				for(uint8_t i=0; i<CHANNELS; i++){
-					pwmValues[i] = 1700<<1;
-				}
+				// rcOutputs(ENABLED);
+				// for(uint8_t i=0; i<CHANNELS; i++){
+					// pwmValues[i] = 1700<<1;
+				// }
 				sys.statusLEDs = ENABLED;
 				
 				
@@ -475,26 +494,102 @@ void loop(void){
 				
 				// if((radioReadReg(OPCONTROL1_REG)&(1<<RFM_rxon)) != (1<<RFM_rxon)){
 					// rfmIntConfig(ENABLED,100);
+					//EIMSK = (1<<INT0);
 					// radioWriteReg(OPCONTROL1_REG, (1<<RFM_rxon));
 					// // radioWriteReg(0x27, 100);
 					// printf("Enabled Rx\n");
 				// }
 				
 				
-				if(RFM_INT){
-					LED_OR = HIGH;
-					uint8_t addr[] = {0x02,0x03,0x04,0x07,0x08,0x14,0x15,0x16,0x17,0x18,0x19,0x26,0x27,0x2A,0x2B};
-					for(uint8_t k=0; k<sizeof(addr); k++){
-						CS_RFM = LOW;
-							transferSPI(addr[k]);
-							uint8_t response = transferSPI(0x00);
-						CS_RFM = HIGH;
-						printf("%X,",response);
+				if(sys.intSrc.rfm || RFM_INT){
+					
+					// sys.intSrc.rfm = 0; Move to end to prevent double cycling
+					//rfmSetDlChannel(dlFreqList[dlChannel]);
+					
+					uint8_t rssi = radioReadReg(0x26);
+					int8_t afcMeasure = radioReadReg(0x2B); // Is manualFreq>>2 Offset. This 4x + manualFreq is best center
+					uint8_t rfmIntReg1 = radioReadReg(0x02);
+					uint8_t rfmIntReg2 = radioReadReg(0x03);
+					uint8_t rfmIntReg3 = radioReadReg(0x04);
+					uint8_t rfmModeReg = radioReadReg(0x07);
+					uint8_t rfmHeader3 = radioReadReg(0x47);
+					uint8_t rfmHeader2 = radioReadReg(0x48);
+					uint8_t rfmHeader1 = radioReadReg(0x49);
+					
+					
+					
+					CS_RFM = LOW;
+						transferSPI(0x7F);
+						for(uint8_t i=0; i<32; i++){
+							rfmFIFO[i] = transferSPI(0x00);
+						}
+					CS_RFM = HIGH;
+					/*
+					const uint8_t DL_BYTES = 10;
+					uint8_t dlReadArray[DL_BYTES];
+					
+					uint8_t k=0;
+					for(uint8_t j=0; j<(DL_BYTES-4); j++){
+						dlReadArray[k]   = ((rfmFIFO[j*5  ]&0xFC)>>2 | rfmFIFO[j*5+1]<<6);
+						dlReadArray[k+1] = ((rfmFIFO[j*5+1]&0xF0)>>4 | rfmFIFO[j*5+2]<<4);
+						dlReadArray[k+2] = ((rfmFIFO[j*5+2]&0xC0)>>6 | rfmFIFO[j*5+3]<<2);
+						dlReadArray[k+3] =  rfmFIFO[j*5+4];
+						k+=4;
 					}
-					printf("%X", RFM_INT);
+					
+					
+					// 5C,41,44,57,79,61,40,60,43,C6
+					printf("%X,",dlReadArray[0]);
+					for(uint8_t i=0; i<7; i++){
+						//pwmValues[i] = (( ((dlReadArray[0]>>i)&0x01)<<8 | dlReadArray[i+1] )<<1+1000)<<1;;
+						pwmValues[i] = (((uint16_t) dlReadArray[i+1]<<2) + 1000)<<1;
+						printf("%u,",pwmValues[i]>>1);
+					}
+					*/
+					
+					// for(uint8_t i=0; i<DL_BYTES; i++){
+						// printf("%X,",dlReadArray[i]);
+					// }
+					
+					
+					radioWriteReg(0x08, (1<<1));
+					radioWriteReg(0x08, 0);
+					radioWriteReg(0x07, (1<<2)|(1<<1));
+					
+					printf("%u,%u,%d,%X,%X,%X,%X,%X,%X\t",dlChannel,rssi,afcMeasure,rfmIntReg1,rfmIntReg2,rfmIntReg3,rfmModeReg,rfmHeader3,rfmHeader2,rfmHeader1);
 					printf("\n");
+					
+					//printf("%u,%u,%d\n",dlChannel,rssi,afcMeasure);
+					
+					// radioWriteReg(0x05,(1<<4));
+					//EIMSK = (1<<INT0);
+					
+					sys.intSrc.rfm = 0;
 				}
-	
+				
+				if(timer1ms > timestamp+600){ // Still have issues at 60 seconds intervals with this!!!!!! 
+					//LED_OR = HIGH;
+					timestamp = timer1ms;
+					
+					//dlChannel = (dlChannel > 200)? 0 : dlChannel+1;
+					
+					dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0; 
+					//rfmSetDlChannel(dlFreqList[dlChannel]);
+					
+					// manualFreq = (manualFreq >= 34600)? 3000 : manualFreq + 64;
+					// radioWriteReg(0x76,manualFreq>>8);		// Freq Carrier 1	Upper Byte
+					// radioWriteReg(0x77,manualFreq&0xFF);	// Freq Carrier 0	Lower Byte
+					
+					//printf("%u\n",manualFreq);
+				
+					// radioWriteReg(0x08, (1<<1));
+					// radioWriteReg(0x08, 0);
+				}
+				
+				if(timer1ms > secLoop+1000){
+					updateVolts(1);
+					rcOutputs(ENABLED);
+				}
 	
 				//printState();
 				
@@ -514,10 +609,10 @@ void loop(void){
 					// sys.intSrc.wdt = 0;
 				// }
 			// Determine nextState using refreshed information
-				if(timer10ms > 800){
+				if(timer1ms > 8000){
 					updateVolts(1);
 					sys.state = (sys.powerState)? BEACON : SLEEP;
-					timer10ms = 0;
+					timer1ms = 0;
 				}
 			// Continue if remaining in current state
 				if(sys.state != FAILSAFE){
@@ -544,7 +639,7 @@ void loop(void){
 	}
 
 	
-	LED_OR = LOW;
+	// LED_OR = LOW;
 }
 
 void printState(){
@@ -689,8 +784,8 @@ uint8_t atMegaInit(void){
 
 	// Timers
 	TCCR0A = _BV(WGM01); // CTC Mode
-	TCCR0B = (1<<CS02)|(1<<CS00); // clk/1024
-	OCR0A = 156; // 10 ms // Or is it 155?
+	TCCR0B = (1<<CS01)|(1<<CS00); // clk/64
+	OCR0A = 249; // 1ms
 	TIMSK0 = (1<<OCIE0A);
 	
 	
