@@ -287,7 +287,7 @@ const uint8_t configCore[][2] = { // Start the device inert but ready, interrupt
 	{0x09,0x7F},		// Xtal Cap 		Default @ 12.5pF
 	{0x0B,0b00010010},	// GPIO1 			Tx
 	{0x0C,0b00010101},	// GPIO2 			Rx
-	{0x0D,0b00011011},	// GPIO3 			Sync=11011 RxData=10100 Preamble=11001 RxFifoFull=10110 RxState=10101
+	{0x0D,0b00010100},	// GPIO3 			Sync=11011 RxData=10100 Preamble=11001 RxFifoFull=10110 RxState=10101 WUT=00001
 	{0x0E,0},			// I/O Ports		None
 	{0x05,0x00},		// Int Enable 1		
 	{0x06,0x03},		// Int Enable 2		Chip Ready and POR
@@ -315,7 +315,7 @@ const uint8_t configCore[][2] = { // Start the device inert but ready, interrupt
 	{0x19,1},			// Low Cyc Dur		LDC/M Wake Ratio
 	
 	// 430 MHz Band, +5kHz Calibration, FHSS Off
-	{0x73,32},			// Freq Offset 1	+5 kHz Calibration					
+	{0x73,0},			// Freq Offset 1	+5 kHz Calibration					
 	{0x74,0x00},		// Freq Offset 2						
 	{0x75,0x53},		// Freq Band		430 MHz Band	
 	{0x79,0x00},		// FHSS Channel							
@@ -480,19 +480,19 @@ const uint8_t configRxTone1750[][2] = {
 	{0x25, 0xA2},		// Clock Recovery Timing Loop Gain 0
 	{0x1D, 0x44},		// AFC Loop Gearshift Override
 	{0x1E, 0x0A},		// AFC Timing Control
-	{0x2A, 0x1D},		// AFC Limiter
+	{0x2A, 0x30},		// AFC Limiter
 	{0x69,0x60},		// AGC Override		AGC Enabled	
 	
 	// Packet
 	{0x30,0x80},		// Packet Handler on, 
-	{0x32,0x01},		// 2 Headers
-	{0x33,0x1E},		// 2 Headers, All Sync
+	{0x32,0x01},		// 1 Headers
+	{0x33,0x18},		// 1 Headers, 1 Sync
 	{0x34,0x20},		// 64 nibble = 32 byte preamble
 	{0x35,0x20},		// 0x35 need to detect 20bit preamble
 	{0x36,0x55},
-	{0x37,0x55},
-	{0x38,0x55},
-	{0x39,0x55},
+	//{0x37,0x55},
+	//{0x38,0x55},
+	//{0x39,0x55},
 	{0x3E,0x0F},
 	{0x3F,0x55},
 	//{0x40,0x55},
@@ -514,10 +514,10 @@ const uint8_t configRxTone1750[][2] = {
 	{0x77,0x00},		// Freq Carrier 0	<>					
 	
 	// LDC
-	// {0x14, 7},			// R in T_WUT = 4 * M * 2^R / 32768, .015625*M ms for R=7 (2^7=128)
-	// {0x15, 0},			// M[15:8]
-	// {0x16, 128},		// M[7:0]
-	// {0x19, 1},			// LDC in T_LDC_ON = 4 * LDC * 2^R / 32768
+	{0x14, 7},			// R in T_WUT = 4 * M * 2^R / 32768, .015625*M ms for R=7 (2^7=128)
+	{0x15, 0},			// M[15:8]
+	{0x16, 128},		// M[7:0]
+	{0x19, 1},			// LDC in T_LDC_ON = 4 * LDC * 2^R / 32768
 	
 	// Device State
 	// {0x07, RFM_xton},
@@ -535,7 +535,8 @@ void rfmIntConfig(uint8_t mode, uint8_t rssiThresh){
 		// }
 		
 		
-		radioWriteReg(0x05, (1<<1)); // RX FIFO Almost Full
+		//radioWriteReg(0x05, (1<<1)); // RX FIFO Almost Full
+		radioWriteReg(0x06, (1<<7)); // RX FIFO Almost Full
 		//radioWriteReg(0x05, (1<<1)); // Enable Valid Packet Received Interrupt
 		// radioWriteReg(0x05, (1<<4)); // Enable Valid Packet Received Interrupt
 		//radioWriteReg(0x06, (1<<7)|(1<<6)); // (1<<4)| Enable RSSI Interrupt

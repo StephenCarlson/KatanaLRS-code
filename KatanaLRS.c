@@ -554,9 +554,11 @@ void loop(void){
 					
 					radioWriteReg(0x08, (1<<1));
 					radioWriteReg(0x08, 0);
-					radioWriteReg(0x07, (1<<2)|(1<<1));
+					radioWriteReg(0x07, 0); //(1<<2)|(1<<1));
+					radioWriteReg(0x08, (1<<2));
+					// radioWriteReg(0x70, (1<<5)|(1<<4));
 					
-					printf("%u,%u,%d,%X,%X,%X,%X,%X,%X\t",dlChannel,rssi,afcMeasure,rfmIntReg1,rfmIntReg2,rfmIntReg3,rfmModeReg,rfmHeader3,rfmHeader2,rfmHeader1);
+					printf("%u,%u,%d,%X,%X,%X,%X,%X,%X\t",dlChannel,rssi,afcMeasure,rfmIntReg1,rfmIntReg2,rfmIntReg3,rfmHeader3,rfmHeader2,rfmHeader1);
 					printf("\n");
 					
 					//printf("%u,%u,%d\n",dlChannel,rssi,afcMeasure);
@@ -567,7 +569,7 @@ void loop(void){
 					sys.intSrc.rfm = 0;
 				}
 				
-				if(timer1ms > timestamp+600){ // Still have issues at 60 seconds intervals with this!!!!!! 
+				if(timer1ms > timestamp+5000){ // Still have issues at 60 seconds intervals with this!!!!!! 
 					//LED_OR = HIGH;
 					timestamp = timer1ms;
 					
@@ -584,6 +586,9 @@ void loop(void){
 				
 					// radioWriteReg(0x08, (1<<1));
 					// radioWriteReg(0x08, 0);
+					
+					
+					printf("~%X,%X,%X\n",radioReadReg(0x02),radioReadReg(0x04),radioReadReg(0x07));
 				}
 				
 				if(timer1ms > secLoop+1000){
