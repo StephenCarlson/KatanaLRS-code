@@ -920,18 +920,6 @@ To-Do:
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 /*
 Dragon Link Packet Structures
 
@@ -963,10 +951,6 @@ F	Lower CRC-16 Byte
 
 
 */
-
-
-
-
 
 
 
