@@ -86,8 +86,8 @@ ISR(INT0_vect){
 	timestamp = timer1ms;
 	
 	dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0; 
-	//radioWriteReg(0x05,0);
-	//radioWriteReg(0x07,(1<<1));
+	//rfmWriteReg(0x05,0);
+	//rfmWriteReg(0x07,(1<<1));
 	//EIMSK = 0;
 }
 
@@ -100,6 +100,12 @@ ISR(PCINT2_vect){
 ISR(WDT_vect){
 	sys.intSrc.wdt = 1;
 }
+
+// ISR(TIMER1_CAPT_vect){
+	// This is where the Input PPM steam is parsed
+	
+	
+// }
 
 ISR(TIMER1_OVF_vect ){ // May want to redo as if/else structure, more efficient?
 	switch(ch){
@@ -236,14 +242,14 @@ void setup(void){
 	
 	// Restart Peripherals											// ~105 ms
 	for(uint8_t i=0; i<5; i++){
-		radioWriteReg(0x07, 0x80);		// Reset the Chip
+		rfmWriteReg(0x07, 0x80);		// Reset the Chip
 		_delay_ms(1);
 	}
 	for(uint8_t i=0; i<200; i++){
-		if((radioReadReg(0x04)&0x02) == 0x02) break;
+		if((rfmReadReg(0x04)&0x02) == 0x02) break;
 		_delay_ms(1);
 	}
-	radioMode(ACTIVE);
+	rfmSetMode(ACTIVE);
 	
 	// Tasks and Routines
 	printf("\n\nKatanaLRS v1\nBy Steve Carlson %s\n\n",__DATE__);
@@ -263,8 +269,8 @@ void setup(void){
 	printf("Device ID Check: ");
 	if(deviceIdCheck()){
 		printf("OK\n");
-		// transmitELT();
-		// transmitELT_Packet();										// ~100 ms
+		// eltFullSequence();
+		// eltTransmit_Packet();										// ~100 ms
 	} else{
 		printf("FAILED!\n");
 		for(uint8_t i=0; i<10; i++){
@@ -295,10 +301,10 @@ void setup(void){
 	
 	// Development
 	
-	rfmIntConfig(ENABLED,100);
+	rfmSetInterrupts(ENABLED,100);
 	EICRA = _BV(ISC01); // Falling-Edge
 	EIMSK = _BV(INT0);
-	radioWriteReg(OPCONTROL1_REG, (1<<RFM_rxon));
+	rfmWriteReg(RFM_CONTROL_1, RFM_rxon);
 }
 
 void loop(void){
@@ -352,8 +358,8 @@ void loop(void){
 				wdtIntConfig(ENABLED,9); //DISABLED,0);
 			// Refresh information
 				updateVolts(0);
-				noiseFloor = radioReadRSSI();
-				//rfmIntList = rfmReadIntrpts();
+				noiseFloor = rfmGetRSSI();
+				//rfmIntList = rfmGetInterrupts();
 			// Determine nextState using refreshed information
 				if(noiseFloor>100){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
 					printf("Rx in DOWN Works!\t%u\t%X\n",noiseFloor,rfmIntList);
@@ -372,7 +378,7 @@ void loop(void){
 				sys.statusLEDs = ENABLED; //DISABLED;
 				uartIntConfig(DISABLED);
 			// Configure for next loop and continue
-				//rfmIntConfig(DISABLED,100);
+				//rfmSetInterrupts(DISABLED,100);
 				//EIMSK = (1<<INT0);
 				systemSleep(9);
 			break;
@@ -387,10 +393,10 @@ void loop(void){
 				wdtIntConfig(ENABLED,9);
 			// Refresh information
 				updateVolts(0);
-				transmitELT();
+				eltFullSequence();
 				_delay_ms(2);
-				noiseFloor = radioReadRSSI();
-				//rfmIntList = rfmReadIntrpts();
+				noiseFloor = rfmGetRSSI();
+				//rfmIntList = rfmGetInterrupts();
 			// Determine nextState using refreshed information
 				if(noiseFloor>100){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
 					//printf("Rx in SLEEP Works!\t%u\t%X\n",noiseFloor,rfmIntList);
@@ -412,7 +418,7 @@ void loop(void){
 				sys.statusLEDs = ENABLED; //DISABLED;
 				uartIntConfig(DISABLED);
 			// Configure for next loop and continue
-				//rfmIntConfig(DISABLED,100);
+				//rfmSetInterrupts(DISABLED,100);
 				//EIMSK = (1<<INT0);
 				_delay_ms(30);
 				systemSleep(9);
@@ -426,11 +432,11 @@ void loop(void){
 						// and to preserve stealth. No R/C Outputs or LEDs if visited from SLEEP.
 						// If GPS information is flowing, parse it.
 				wdtIntConfig(ENABLED,8);
-				//rfmIntConfig(DISABLED,100);
+				//rfmSetInterrupts(DISABLED,100);
 				//EIMSK = (1<<INT0);
 			// Refresh information
 				updateVolts(1);
-				//rfmIntList = rfmReadIntrpts();
+				//rfmIntList = rfmGetInterrupts();
 				_delay_ms(2);
 			// Determine nextState using refreshed information
 				if(0){ //rfmIntList&RFM_INT_VALID_PACKET_RX){
@@ -450,7 +456,7 @@ void loop(void){
 				rcOutputs((sys.powerState)? ENABLED : DISABLED);
 				sys.statusLEDs = ENABLED; //(sys.powerState)? ENABLED : DISABLED;
 				uartIntConfig(DISABLED);
-				transmitELT();
+				eltFullSequence();
 				
 			// Configure for next loop and continue
 				_delay_ms(30);
@@ -492,11 +498,11 @@ void loop(void){
 				
 				
 				
-				// if((radioReadReg(OPCONTROL1_REG)&(1<<RFM_rxon)) != (1<<RFM_rxon)){
-					// rfmIntConfig(ENABLED,100);
+				// if((rfmReadReg(RFM_CONTROL_1)& RFM_rxon) != RFM_rxon){
+					// rfmSetInterrupts(ENABLED,100);
 					//EIMSK = (1<<INT0);
-					// radioWriteReg(OPCONTROL1_REG, (1<<RFM_rxon));
-					// // radioWriteReg(0x27, 100);
+					// rfmWriteReg(RFM_CONTROL_1, RFM_rxon);
+					// // rfmWriteReg(0x27, 100);
 					// printf("Enabled Rx\n");
 				// }
 				
@@ -506,15 +512,15 @@ void loop(void){
 					// sys.intSrc.rfm = 0; Move to end to prevent double cycling
 					//rfmSetDlChannel(dlFreqList[dlChannel]);
 					
-					uint8_t rssi = radioReadReg(0x26);
-					int8_t afcMeasure = radioReadReg(0x2B); // Is manualFreq>>2 Offset. This 4x + manualFreq is best center
-					uint8_t rfmIntReg1 = radioReadReg(0x02);
-					uint8_t rfmIntReg2 = radioReadReg(0x03);
-					uint8_t rfmIntReg3 = radioReadReg(0x04);
-					uint8_t rfmModeReg = radioReadReg(0x07);
-					uint8_t rfmHeader3 = radioReadReg(0x47);
-					uint8_t rfmHeader2 = radioReadReg(0x48);
-					uint8_t rfmHeader1 = radioReadReg(0x49);
+					uint8_t rssi = rfmReadReg(0x26);
+					int8_t afcMeasure = rfmReadReg(0x2B); // Is manualFreq>>2 Offset. This 4x + manualFreq is best center
+					uint8_t rfmIntReg1 = rfmReadReg(0x02);
+					uint8_t rfmIntReg2 = rfmReadReg(0x03);
+					uint8_t rfmIntReg3 = rfmReadReg(0x04);
+					uint8_t rfmModeReg = rfmReadReg(0x07);
+					uint8_t rfmHeader3 = rfmReadReg(0x47);
+					uint8_t rfmHeader2 = rfmReadReg(0x48);
+					uint8_t rfmHeader1 = rfmReadReg(0x49);
 					
 					
 					
@@ -552,18 +558,18 @@ void loop(void){
 					// }
 					
 					
-					radioWriteReg(0x08, (1<<1));
-					radioWriteReg(0x08, 0);
-					radioWriteReg(0x07, 0); //(1<<2)|(1<<1));
-					radioWriteReg(0x08, (1<<2));
-					// radioWriteReg(0x70, (1<<5)|(1<<4));
+					rfmWriteReg(0x08, (1<<1));
+					rfmWriteReg(0x08, 0);
+					rfmWriteReg(0x07, 0); //(1<<2)|(1<<1));
+					rfmWriteReg(0x08, (1<<2));
+					// rfmWriteReg(0x70, (1<<5)|(1<<4));
 					
 					printf("%u,%u,%d,%X,%X,%X,%X,%X,%X\t",dlChannel,rssi,afcMeasure,rfmIntReg1,rfmIntReg2,rfmIntReg3,rfmHeader3,rfmHeader2,rfmHeader1);
 					printf("\n");
 					
 					//printf("%u,%u,%d\n",dlChannel,rssi,afcMeasure);
 					
-					// radioWriteReg(0x05,(1<<4));
+					// rfmWriteReg(0x05,(1<<4));
 					//EIMSK = (1<<INT0);
 					
 					sys.intSrc.rfm = 0;
@@ -579,16 +585,16 @@ void loop(void){
 					//rfmSetDlChannel(dlFreqList[dlChannel]);
 					
 					// manualFreq = (manualFreq >= 34600)? 3000 : manualFreq + 64;
-					// radioWriteReg(0x76,manualFreq>>8);		// Freq Carrier 1	Upper Byte
-					// radioWriteReg(0x77,manualFreq&0xFF);	// Freq Carrier 0	Lower Byte
+					// rfmWriteReg(0x76,manualFreq>>8);		// Freq Carrier 1	Upper Byte
+					// rfmWriteReg(0x77,manualFreq&0xFF);	// Freq Carrier 0	Lower Byte
 					
 					//printf("%u\n",manualFreq);
 				
-					// radioWriteReg(0x08, (1<<1));
-					// radioWriteReg(0x08, 0);
+					// rfmWriteReg(0x08, (1<<1));
+					// rfmWriteReg(0x08, 0);
 					
 					
-					printf("~%X,%X,%X\n",radioReadReg(0x02),radioReadReg(0x04),radioReadReg(0x07));
+					printf("~%X,%X,%X\n",rfmReadReg(0x02),rfmReadReg(0x04),rfmReadReg(0x07));
 				}
 				
 				if(timer1ms > secLoop+1000){
@@ -879,187 +885,4 @@ void printHelpInfo(void){
 }
 
 
-/*
-
-To-Do:
-	The Repeater Access Tone used in the amateur radio world is 1750 Hz, if not CTCSS, which is ~100 Hz.
-		Would appear as 3500 bps preamble
-		Get Direct Rx Mode working
-	It therefore makes sense to add a frequency counter that detect this tone if the RSSI is strong in a sleep mode.
-	This way, the device will ignore random signals during DOWN/SLEEP.
-	Need to test all beacon states/behaviors.
-	Add Packet interaction/decoding:
-		CRC-16
-		Convert 8-bit SPI to 10-bit UART
-		Get Sync Word detection working
-		Get the selective bit pattern thing working in the RFM
-	Get Bind working once the packet mechanism works
-	Get the frequency table implimented, take one final shot and dissecting the DragonLink pattern
-	Get WDT to keep things stable. Continue to reduce startup and aquire time.
-	Go on a fox hunt with the full beacon states implemented.
-	
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-*/
-
-
-
-
-
-
-/*
-Dragon Link Packet Structures
-
-
-00001100 10000010 10110000 11111110 11111110 01001000 11111110 00000110 10000011 11111110 00010101 10000110 11100001 01001101
-A   B      C        D        E1       E2       E3       E4       E5       E6       E7       E8       E9       F1       F2
-
-A	Flags: Bind and Failsafe Inactive
-B	Byte Count: 12 Bytes beyond ID byte (D)
-C	System ID: 0x82
-D	MSB's for lower 8 channels
-En	9 Channels Payload
-F1	Upper Byte of CRC-16 IBM/ARC
-F2	Lower Byte of CRC-16 IBM/ARC
-
-BIND Behavior:
-01000011 01001111 00000111 10000100 00100110
-A   B      C        D        E        F
-
-A	FailsafeSet Flag is [7], Bind Flag is [6]
-B	Number of payload bytes after System ID Byte
-C	System ID
-D	Number of Channels
-E	Upper CRC-16 Byte
-F	Lower CRC-16 Byte
-
-
-
-
-
-*/
-
-
-
-
-
-
-/*
-State Machine Notes
-
-Repeat the State Machine Defines here:
-#define DOWN 			0 // Configure RFM/SI4432 to interrupt on Rx Packet or RSSI, only wake on this interrupt
-#define SLEEP			1 // Sleep, wake on watchdog, measure RSSI, transmit packet and tones
-#define BEACON	 		2 // Same as SLEEP, but continuous. Activated on RX RSSI, Resume SLEEP in 2 Minutes
-#define ACTIVE 			3 // Normal Operation as an LRS Receiver, no transmission behaviors
-
-
-ACTIVE (3):
-	If we are receiving valid R/C LRS Packets, and the System Power-in is good, then we stick with this mode.
-	If we lose R/C Packets for longer than the time-out threshold, we activate the failsafes for the R/C channels.
-	We start timing how long it has been since last valid packet, and do not switch modes until ~30 seconds from last packet
-	Despite switching modes, we will continue to supply Failsafe setpoints as long as powerState is good (R/C servos are still powered)
-	When the powerState flag is cleared, then we stop all PPM, Serial, and/or PWM generation, as the plane is effectively dead, and all electronics presumed also.
-	If we have good R/C packets but the powerState is cleared, this means that we've either crashed hard enough to disconnect system power, 
-		or the flight is over as the pilot has disconnected the battery by hand.
-	Creative Part: How do we know which case is which? My solution at the moment: If the R/C commands are Centered Sticks, Throttle low, then this is end-of-flight.
-		To avoid draining the battery with the beacon mode unnecessairly, we transition to DOWN, which is listening only.
-		
-		
-		
-DOWN (0):
-	This is Listening-Only. The RFM/SI4432 is configured to interrup on a packet match, RSSI threshold, or both.
-	This raises the question: Does the system transition out of this mode if it received a packet, or if there is a RSSI peak?
-		If the interrupt is for a received valid packet, this means that the LRS is back. Transition to ACTIVE. There, if powerState is bad, it just hangs out I guess.
-			Otherwise, if powerState is good, it will resume PPM/PWM/Serial regular operation.
-
-
-SLEEP (1):
-	Every WatchDog cycle, the system wakes, measures RSSI and checks for packet, and transmits the ELT Packet and Tones.
-	If RSSI, Transition to BEACON
-	If Packet, Transition to ACTIVE
-	
-BEACON (2):
-	Sets the WatchDog to 2 Sec, or, alternatively, simply disables it and runs the loop continuously.
-	Starts a count-down timer. On timing out, returns to SLEEP mode.
-	Minor Issue: Does an RSSI or Packet event clear the timer? The danger is that a FHSS packet system is lit-up near by, and thus tripping the RSSI.
-		Because BEACON is sampling the RSSI much faster then SLEEP, it might exhaust the LiPoly quickly while hanging in this mode.
-		So, lets simply make this mode something that has to be re-entered after each time-out. Good move?
-	
-	
-Concurrent Items:
-batteryState: LiPoly is over 3.4v or so
-	If this ever clears, if powerState is good, then no transition/change
-	If powerState is cleared, we transition to DOWN. The problem is that this disables transmitting modes (1 and 2).
-	If we get RSSI or Packet in DOWN, then it needs to be able to respond, and to do so, has to transition to either SLEEP or BEACON.
-	So, batteryState should be enforced in some manner that allows wandering into other states for a bit.
-	
-powerState: KatanaLRS is being powered by the aircraft, sufficient to charge the LiPoly
-	If cleared, disable PPM/PWM/Serial? Bad move, because if the receiver merely is disconnected, then the plane might be good while we shunt it.
-
-RSSI: RFM/SI4432 measures a RSSI that is 30 dBm above noiseFloor
-	Means that a 70cm HT is being keyed. Only applicable it no LRS Packets are being received and we are not ACTIVE mode.
-	Actually, no LRS packets should drive whether we are ACTIVE or not, right?
-	
-Packet: RFM/SI4432 has captured a valid LRS packet
-	Means that the LRS is active. If ACTIVE, this signals the start of processing a new frame. Otherwise, ....
-
-
-
-Lets try in the same style as KatanaLRS-Statemachine.ods
-
-
-		State ->			(Mealy/Concurrent)									DOWN								SLEEP(WDT=8sec)					BEACON							ACTIVE
-		Substate ->																																									failsafe==0							failsafe==1							
-Outputs:
-	PPM/PWM/Serial																Disabled							Disabled						powerState? Enabled:Off			Enabled								Enabled
-	ELT Transmissions															Disabled, Only Rx					Every WDT Wake					Continuous						Disabled							Disabled
-	Indicator LEDs																Disabled							Disabled						Enabled? Want Stealth?			Enabled								Enabled
-Inputs:					
-	RFM/Si4432 Int or Read													
-		RSSI Thresh	(70cm HT Keyed)												Ignore?								BEACON, TIMER=15sec				-								-									-
-		BIND Packet																Delay ~8sec; SLEEP					BEACON, TIMER=1min												-									BEACON, TIMER=1min
-		Valid PACKET															ACTIVE, TIMER=2sec					ACTIVE, TIMER=2sec				ACTIVE, TIMER=2sec				TIMER=2sec							failsafe=0, TIMER=0.2sec
-
-	TIMER Expires / Default Case												WDT Disabled						batteryState? SLEEP:			powerState?						sticksCentered&&(!powerState)? 		powerState? BEACON:SLEEP
-	|																													DOWN							(BEACON,TIMER=1min):			DOWN :
-	|																																					SLEEP							failsafe=1, TIMER=20min
-
-	
-	GPS UART Sentence															Ignore, as not powered				Ignore, as not powered			powerState? Valid? Keep			Valid? Keep							Valid? Keep
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-
-	
-	
-	
-	
-
-*/
 

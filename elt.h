@@ -25,21 +25,10 @@ static const uint16_t beaconNotes[BEACON_NOTES][3] = {{142,704,7},{113,222,4},{9
 
 
 
-void audioBlip(uint8_t, uint8_t, uint8_t);
-void transmitELT(void);
-void transmitELT_Beacon(void);
-void transmitELT_Packet(void); //uint8_t *,uint8_t);
-void transmitELT_AFSK(void);
-
-
-
-
-
-
-
-
-
-
-
+// void audioBlip(uint8_t, uint8_t, uint8_t);
+void eltFullSequence(void);
+void eltTransmit_AFSK(void);
+void eltTransmit_Packet(void); //uint8_t *,uint8_t);
+void eltTransmit_Beacon(void);
 
 #endif // ELT_H

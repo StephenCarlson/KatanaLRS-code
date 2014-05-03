@@ -1,14 +1,14 @@
 #include "elt.h"
 
-volatile uint16_t pulseCount;
+volatile uint16_t eltPulseCount;
 // static volatile struct{ // Huge mess, fix later
 	// union{
 	// }
-	// uint8_t afskPacket[6]; 
-// } afskPacket;
+	// uint8_t eltAfskPacket[6]; 
+// } eltAfskPacket;
 
-// volatile uint8_t afskPacket[6] = {0b10101100, 0b01100000, 0b11000010, 0b00111011, 0b10010010, 0b01010111};
-volatile uint8_t afskPacket[6] = {'K', 'E', '7', 'Z', 'L', 'H'};
+// volatile uint8_t eltAfskPacket[6] = {0b10101100, 0b01100000, 0b11000010, 0b00111011, 0b10010010, 0b01010111};
+volatile uint8_t eltAfskPacket[6] = {'K', 'E', '7', 'Z', 'L', 'H'};
 
 
 // 40.396323,-111.758359
@@ -29,8 +29,8 @@ volatile uint8_t afskPacket[6] = {'K', 'E', '7', 'Z', 'L', 'H'};
 
 
 ISR(TIMER2_COMPA_vect){ // OC2A --> MOSI Pin
-	// FORCE_MOSI = pulseCount&0x01;
-	pulseCount++;
+	// FORCE_MOSI = eltPulseCount&0x01;
+	eltPulseCount++;
 }
 // ISR(TIMER2_COMPB_vect){ // OC2B not connected externally
 	// Signal the end of this bit
@@ -49,7 +49,7 @@ ISR(TIMER2_COMPA_vect){ // OC2A --> MOSI Pin
 	// TIMSK2 = (1<<TIOE2); //(1<<OCIE2B);
 
 void systemIdle(void);
-	
+
 void systemIdle(void){
 	set_sleep_mode(SLEEP_MODE_IDLE);
 	sleep_enable();
@@ -59,99 +59,39 @@ void systemIdle(void){
 	sleep_disable();
 }
 
-
-
-void transmitELT(void){
-	radioWriteReg(0x75, 0x53);	// Freq Band		<>
-	radioWriteReg(0x76, 0x64);	// Freq Carrier 1	<>
-	radioWriteReg(0x77, 0x00);	// Freq Carrier 0	<>
-	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
-	transmitELT_AFSK();
+void eltFullSequence(void){
+	rfmWriteReg(0x75, 0x53);	// Freq Band		<>
+	rfmWriteReg(0x76, 0x64);	// Freq Carrier 1	<>
+	rfmWriteReg(0x77, 0x00);	// Freq Carrier 0	<>
+	rfmWriteReg(RFM_CONTROL_1, RFM_xton);
+	eltTransmit_AFSK();
 	_delay_ms(1);
-	transmitELT_Packet();
+	eltTransmit_Packet();
 	_delay_ms(1);
-	transmitELT_Beacon();
+	eltTransmit_Beacon();
 	_delay_ms(1);
-	radioWriteReg(OPCONTROL1_REG, 0x00);
+	rfmWriteReg(RFM_CONTROL_1, 0x00);
 }
 
 
-void transmitELT_Beacon(void){
-	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
-		for(uint8_t i=0; (i<20) && radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton)); i++){
-			_delay_ms(1);
-			if(i==20) printf("2A\n");
-		}
-	}
-	
-	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
-	radioWriteReg(0x72, 7);			// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
-	
-	//_delay_ms(1);
-	
-	for(uint8_t n=1; n<BEACON_NOTES; n++){ // n=0 for no AFSK, but as the AFSK packet is A4/A5 notes, it replaces A4 here
-		radioWriteReg(0x6D, 0x08 | beaconNotes[n][2]);
-		radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
-		_delay_ms(1);
-		SPCR = 0;
-		CS_RFM = HIGH;
-		_delay_ms(1);
-		
-		// CTC Mode with Toggle on OC2A (SPI MOSI)
-		TCCR2A = _BV(COM2A0)|_BV(WGM21); //|_BV(WGM20); //WGM21 WGM20
-		TCCR2B = _BV(CS22)|_BV(CS20); //|_BV(WGM22); // clk/128 //WGM22
-		TIMSK2 = (1<<OCIE2A); //(1<<OCIE2B);
-		
-		OCR2A = beaconNotes[n][0]; // Poor Resolution for 8-bit range
-		// 142.0, 112.7,  94.8, 106.4,  84.5, 71.0
-		// 440.1, 553.1, 657.9, 589.6, 744.0, 880.3
-		// 440    554.4  659.3  587.3  740    880
-		// ok     -1.3   -1.4   +2.3   +4.0   ok
-		
-		// 
-		// 440.14	558.04	664.89
-		// Considered using Timer 0, timer10ms, both won't work well
-		// Timer0 is 15 kHz but would roll often as it is 8-bit
-		// timer10ms is driven by the Timer0 Interrupt. Resolution would be unstable
-		pulseCount = 0;
-		while(pulseCount<beaconNotes[n][1]){
-			systemIdle();
-		}
-
-		
-		TCCR2A = 0;
-		TCCR2B = 0;
-		TIMSK2 = 0;
-		SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR0);
-		_delay_ms(1);
-	}
-	
-	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
-	for(uint8_t i=0; (i<200) && (radioReadReg(0x07)&0x08); i++){
-		_delay_ms(1);
-		if(i==200) printf("1A\n");
-	}
-}
-
-
-void transmitELT_AFSK(void){
+void eltTransmit_AFSK(void){
 	// Bell 202 is 1200 Hz for a Mark '1', 2200 Hz for Space '0', 1200 bps
 	// I think I'll do a prime orthogonal set
 	// Also, lets do 10 to 20 
 
 
-	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
-		for(uint8_t i=0; (i<20) && radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton)); i++){
+	if((rfmReadReg(0x07)& RFM_xton) != RFM_xton){
+		for(uint8_t i=0; (i<20) && rfmWriteReg(RFM_CONTROL_1, RFM_xton); i++){
 			_delay_ms(1);
 			if(i==20) printf("2B\n");
 		}
 	}
 	
-	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
-	radioWriteReg(0x72, 7);			// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
-	radioWriteReg(0x6D, 0x08 | AFSK_TX_POWER);
+	rfmWriteReg(0x71, 0x12);		// FSK Async Mode, 
+	rfmWriteReg(0x72, 7);			// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
+	rfmWriteReg(0x6D, 0x08 | AFSK_TX_POWER);
 	
-	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
+	rfmWriteReg(RFM_CONTROL_1, RFM_txon);
 	_delay_ms(1);
 	SPCR = 0;
 	TCCR2A = _BV(COM2A0)|_BV(WGM21); //|_BV(WGM20); //WGM21 WGM20
@@ -166,14 +106,14 @@ void transmitELT_AFSK(void){
 	// At 440, 11 iterations is one mark, 11 is prime, choose a prime for the space.
 	// 25 ms per bit, lest do either 17 or 19, which yields 680 and 760 Hz
 	// 23 gives 920
-	for(uint16_t i=0; i<sizeof(afskPacket)*8; i++){
-		uint8_t symbol = (0x01 & afskPacket[i>>3]>>(7 - i%8)); // MSB First
+	for(uint16_t i=0; i<sizeof(eltAfskPacket)*8; i++){
+		uint8_t symbol = (0x01 & eltAfskPacket[i>>3]>>(7 - i%8)); // MSB First
 		uint8_t period = (symbol)? 142 : 68; // Pulse period (actually, half the period of the freq)
 		uint8_t reps   = (symbol)?  11 : 23; // Number of repetitions/cycles
 		
 		OCR2A = period; // Mark (1) is 440 Hz, Space (0) is 920 Hz
-		pulseCount = 0;
-		while(pulseCount< reps){
+		eltPulseCount = 0;
+		while(eltPulseCount< reps){
 			systemIdle();
 		}
 	}
@@ -184,29 +124,28 @@ void transmitELT_AFSK(void){
 	SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR0);
 	_delay_ms(1);
 	
-	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
-	for(uint8_t i=0; (i<200) && (radioReadReg(0x07)&0x08); i++){
+	rfmWriteReg(RFM_CONTROL_1, RFM_xton);
+	for(uint8_t i=0; (i<200) && (rfmReadReg(0x07)&0x08); i++){
 		_delay_ms(1);
 		if(i==200) printf("1B\n");
 	}
 }
 
-
-void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
+void eltTransmit_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	
 	uint8_t index = 0;
 	
-	radioWriteReg(0x08,0x01);		// FIFO Clear Sequence
+	rfmWriteReg(0x08,0x01);		// FIFO Clear Sequence
 	//_delay_ms(1);					
-	radioWriteReg(0x08,0x00);		
-	radioWriteReg(0x6E,0x27);		// Tx Data Rate 1	<>					
-	radioWriteReg(0x6F,0x52);		// Tx Data Rate 0	9600 Baud	
-	radioWriteReg(0x71, 0x23);		// GFSK, FIFO Used
-	radioWriteReg(0x72, 20);		// ~20kHz Peak-Peak Deviation
-	radioWriteReg(0x6D, 0x08 | 7);	// Max Power
+	rfmWriteReg(0x08,0x00);		
+	rfmWriteReg(0x6E,0x27);		// Tx Data Rate 1	<>					
+	rfmWriteReg(0x6F,0x52);		// Tx Data Rate 0	9600 Baud	
+	rfmWriteReg(0x71, 0x23);		// GFSK, FIFO Used
+	rfmWriteReg(0x72, 20);		// ~20kHz Peak-Peak Deviation
+	rfmWriteReg(0x6D, 0x08 | 7);	// Max Power
 	
-	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
-		for(uint8_t i=0; (i<20) && radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton)); i++){
+	if((rfmReadReg(0x07)& RFM_xton) != RFM_xton ){
+		for(uint8_t i=0; (i<20) && rfmWriteReg(RFM_CONTROL_1, RFM_xton); i++){
 			_delay_ms(1);
 			if(i==20) printf("2C\n");
 		}
@@ -234,11 +173,11 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	CS_RFM = HIGH;
 	_delay_us(1);
 	
-	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
+	rfmWriteReg(RFM_CONTROL_1, RFM_txon);
 
 	for(uint8_t i=0; i<200; i++){
 		_delay_ms(1);
-		if(radioReadReg(0x03)&0x20) break;
+		if(rfmReadReg(0x03)&0x20) break;
 		if(i==200) printf("1C\n");
 	}
 	
@@ -251,134 +190,67 @@ void transmitELT_Packet(void){ //uint8_t *targetArray, uint8_t count){
 	CS_RFM = HIGH;
 	_delay_us(1);
 	
-	for(uint8_t i=0; (i<200) && (radioReadReg(0x07)&0x08); i++){
+	for(uint8_t i=0; (i<200) && (rfmReadReg(0x07)&0x08); i++){
 		_delay_ms(1);
 		if(i==200) printf("3C\n");
 	}
 	
-	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
+	rfmWriteReg(RFM_CONTROL_1, RFM_xton);
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// void audioBlip(uint8_t tone, uint8_t count, uint8_t interval){
-	// Make a tone on the FPV audio line using the I2C SDA output
-	// Use Timer 2, as this is dedicated to audio tones anyway
-	// This makes the most sense, as it is usually High-Z with a 5k pullup
-	// Putting this through a capacitor to the mic line should work well
-	// The harness should also include a voltage divider, as 3.3v on a 1Vpp mic is harsh
-	// Actually, I wonder what it looks like when the SDA DDRC bit is toggled with its PORTC bit high?
-	// That might be more workable with no need for a fancy buffering harness, just a capacitor.
-	// What would be really nice is no pull-up resistors, then just toggle High-Z / asserted low.
-	// This would be fine, as the mic hangs out at ~ 0.5v
-	
-	// Anyhow, this is all feature bloat, add this after the system is working well
-	
-	
-	
-	
-// }
-
-
-
-
-
-/*
-void transmitELT_Beacon(void){
-	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
-		for(uint8_t i=0; (i<20) && radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton)); i++) _delay_ms(1);
-		//printf("Fail on Preset: Beacon\n");
-		//_delay_ms(2);
+void eltTransmit_Beacon(void){
+	if((rfmReadReg(0x07)& RFM_xton) != RFM_xton ){
+		for(uint8_t i=0; (i<20) && rfmWriteReg(RFM_CONTROL_1, RFM_xton); i++){
+			_delay_ms(1);
+			if(i==20) printf("2A\n");
+		}
 	}
 	
-	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
-	radioWriteReg(0x72, 7);			// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
+	rfmWriteReg(0x71, 0x12);		// FSK Async Mode, 
+	rfmWriteReg(0x72, 7);			// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
 	
-	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
 	//_delay_ms(1);
 	
-	for(uint8_t n=0; n<BEACON_NOTES; n++){ // n=0 for no AFSK, but as the AFSK packet is A4/A5 notes, it replaces A4 here
-		radioWriteReg(0x6D, beaconNotes[n][2]);
+	for(uint8_t n=1; n<BEACON_NOTES; n++){ // n=0 for no AFSK, but as the AFSK packet is A4/A5 notes, it replaces A4 here
+		rfmWriteReg(0x6D, 0x08 | beaconNotes[n][2]);
+		rfmWriteReg(RFM_CONTROL_1, RFM_txon);
 		_delay_ms(1);
 		SPCR = 0;
 		CS_RFM = HIGH;
 		_delay_ms(1);
-		for(uint16_t d=0; d<beaconNotes[n][1]; d++){
-			FORCE_MOSI = d&0x01;
-			_delay_us(beaconNotes[n][0]); // Getting 416 Hz A4 w/o correction, means its adding 66 uS 
-		}
-		SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR0);
-	}
-	radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton));
-}
-*/
-
-/*
-void transmitELT_AFSK(void){
-	// Bell 202 is 1200 Hz for a Mark '1', 2200 Hz for Space '0', 1200 bps
-	// I think I'll do a prime orthogonal set
-	// Also, lets do 10 to 20 
-
-
-	if((radioReadReg(0x07)&(1<<RFM_xton)) != (1<<RFM_xton) ){
-		for(uint8_t i=0; (i<20) && radioWriteReg(OPCONTROL1_REG, (1<<RFM_xton)); i++) _delay_ms(1);
-		//printf("Fail on Preset: Beacon\n");
-		//_delay_ms(2);
-	}
-	
-	radioWriteReg(0x71, 0x12);		// FSK Async Mode, 
-	radioWriteReg(0x72, 7);			// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
-	radioWriteReg(0x6D, AFSK_TX_POWER);
-	
-	radioWriteReg(OPCONTROL1_REG, (1<<RFM_txon));
-	//_delay_ms(1);
-	SPCR = 0;
-	TCCR2A = 0; //WGM21 WGM20; 
-	TCCR2B = _BV(CS22)|_BV(CS21)|_BV(CS20); // WGM22
-	TIMSK2 = (1<<OCIE2A)|(1<<OCIE2B); // TOV2
-	pulseCount = 0;
-	
-	while(pulseCount<sizeof(message)){
 		
+		// CTC Mode with Toggle on OC2A (SPI MOSI)
+		TCCR2A = _BV(COM2A0)|_BV(WGM21); //|_BV(WGM20); //WGM21 WGM20
+		TCCR2B = _BV(CS22)|_BV(CS20); //|_BV(WGM22); // clk/128 //WGM22
+		TIMSK2 = (1<<OCIE2A); //(1<<OCIE2B);
+		
+		OCR2A = beaconNotes[n][0]; // Poor Resolution for 8-bit range
+		// 142.0, 112.7,  94.8, 106.4,  84.5, 71.0
+		// 440.1, 553.1, 657.9, 589.6, 744.0, 880.3
+		// 440    554.4  659.3  587.3  740    880
+		// ok     -1.3   -1.4   +2.3   +4.0   ok
+		
+		// 
+		// 440.14	558.04	664.89
+		// Considered using Timer 0, timer10ms, both won't work well
+		// Timer0 is 15 kHz but would roll often as it is 8-bit
+		// timer10ms is driven by the Timer0 Interrupt. Resolution would be unstable
+		eltPulseCount = 0;
+		while(eltPulseCount<beaconNotes[n][1]){
+			systemIdle();
+		}
+
+		
+		TCCR2A = 0;
+		TCCR2B = 0;
+		TIMSK2 = 0;
+		SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR0);
+		_delay_ms(1);
 	}
 	
-	TCCR2A = 0;
-	TCCR2B = 0;
-	TIMSK2 = 0;
-	SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR0);
+	rfmWriteReg(RFM_CONTROL_1, RFM_xton);
+	for(uint8_t i=0; (i<200) && (rfmReadReg(0x07)&0x08); i++){
+		_delay_ms(1);
+		if(i==200) printf("1A\n");
+	}
 }
-*/
-
