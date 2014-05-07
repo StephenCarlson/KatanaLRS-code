@@ -86,8 +86,6 @@ ISR(INT0_vect){
 	timestamp = timer1ms;
 	
 	dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0; 
-	//rfmWriteReg(0x05,0);
-	//rfmWriteReg(0x07,(1<<1));
 	//EIMSK = 0;
 }
 
@@ -241,15 +239,8 @@ void setup(void){
 	sys.state = ACTIVE;
 	
 	// Restart Peripherals											// ~105 ms
-	for(uint8_t i=0; i<5; i++){
-		rfmWriteReg(0x07, 0x80);		// Reset the Chip
-		_delay_ms(1);
-	}
-	for(uint8_t i=0; i<200; i++){
-		if((rfmReadReg(0x04)&0x02) == 0x02) break;
-		_delay_ms(1);
-	}
-	rfmSetMode(ACTIVE);
+	rfmReset();
+	rfmMode(IDLE_STANDBY);
 	
 	// Tasks and Routines
 	printf("\n\nKatanaLRS v1\nBy Steve Carlson %s\n\n",__DATE__);
@@ -264,7 +255,7 @@ void setup(void){
 	flashOrangeLED(5,10,40); 										// 250 ms
 	sys.monitorMode = 1;
 	
-	updateVolts(0);
+	updateVolts(SLOW);
 	
 	printf("Device ID Check: ");
 	if(deviceIdCheck()){
@@ -301,10 +292,9 @@ void setup(void){
 	
 	// Development
 	
-	rfmSetInterrupts(ENABLED,100);
+	//rfmSetInterrupts(ENABLED,100);
 	EICRA = _BV(ISC01); // Falling-Edge
 	EIMSK = _BV(INT0);
-	rfmWriteReg(RFM_CONTROL_1, RFM_rxon);
 }
 
 void loop(void){
@@ -315,11 +305,12 @@ void loop(void){
 	
 	static uint16_t secLoop;
 	
-	uint16_t rfmIntList = 0;
+	uint16_t rfmIntList = 0; // [0x03,0x04]
 	uint8_t rfmFIFO[64];
-	#define RFM_INT_VALID_PACKET_RX (1<<(1))
-	#define RFM_INT_RSSI_THRESH ((1<<(4))<<8)
-	#define DL_BIND_FLAG (1<<7)
+	// Fix#define RFM_INT_VALID_PACKET_RX (1<<(1))
+	#define RFM_INT_VALID_SYNC (1<<(7))
+	// Fix#define RFM_INT_RSSI_THRESH ((1<<(4))<<8)
+	// Fix#define DL_BIND_FLAG (1<<7)
 	
 	// Assert Concurrent Outputs (Outputs not tied to a FSM State, but merely from inputs)
 	// if(sys.statusLEDs) LED_OR = HIGH; //flashOrangeLED(2,5,5); // Solve Delay timing issue
@@ -331,7 +322,7 @@ void loop(void){
 	
 	if(sys.intSrc.wdt){ // Wow! Race Condition! Should only check this in a single function
 		//if(sys.statusLEDs) LED_OR = HIGH;
-		// updateVolts(1);
+		// updateVolts(FAST);
 		sys.intSrc.wdt = 0;
 		_delay_ms(1);
 		// printf("State: %s\tLipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\tErrors: %u\n",
@@ -355,25 +346,26 @@ void loop(void){
 					// dangerous to have the entire system rest on the RFM if the ATmega disables its WDT and does
 					// hard sleep?
 					// If GPS information is flowing, parse it.
-				wdtIntConfig(ENABLED,9); //DISABLED,0);
+				wdtIntConfig(DISABLED,0); //ENABLED,9); //
 			// Refresh information
-				updateVolts(0);
-				noiseFloor = rfmGetRSSI();
-				//rfmIntList = rfmGetInterrupts();
+				updateVolts(SLOW);
+				//noiseFloor = rfmGetRSSI();
+				rfmIntList = rfmGetInterrupts();
 			// Determine nextState using refreshed information
-				if(noiseFloor>100){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
+				if(rfmIntList&RFM_INT_VALID_SYNC){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
 					printf("Rx in DOWN Works!\t%u\t%X\n",noiseFloor,rfmIntList);
 					// rfmReadFIFO(rfmFIFO);
 					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = SLEEP;
 					sys.state = SLEEP;
 					// else sys.state = ACTIVE;
-				} else sys.state = (sys.batteryState || sys.powerState)? SLEEP : DOWN;
+				} //else sys.state = (sys.batteryState || sys.powerState)? SLEEP : DOWN;
 			// Continue if remaining in current state
 				if(sys.state != DOWN){
 					printState();
 					break;
 				}
 			// Assert Outputs
+				rfmMode(RX_TONE_LDC);
 				rcOutputs(DISABLED);
 				sys.statusLEDs = ENABLED; //DISABLED;
 				uartIntConfig(DISABLED);
@@ -392,13 +384,13 @@ void loop(void){
 					// If GPS information is flowing, parse it.
 				wdtIntConfig(ENABLED,9);
 			// Refresh information
-				updateVolts(0);
+				updateVolts(SLOW);
 				eltFullSequence();
 				_delay_ms(2);
-				noiseFloor = rfmGetRSSI();
-				//rfmIntList = rfmGetInterrupts();
+				// noiseFloor = rfmGetRSSI();
+				rfmIntList = rfmGetInterrupts();
 			// Determine nextState using refreshed information
-				if(noiseFloor>100){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
+				if(rfmIntList&RFM_INT_VALID_SYNC){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
 					//printf("Rx in SLEEP Works!\t%u\t%X\n",noiseFloor,rfmIntList);
 					// rfmReadFIFO(rfmFIFO);
 					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
@@ -414,6 +406,7 @@ void loop(void){
 					break;
 				}
 			// Assert Outputs
+				rfmMode(RX_TONE_LDC);
 				rcOutputs(DISABLED);
 				sys.statusLEDs = ENABLED; //DISABLED;
 				uartIntConfig(DISABLED);
@@ -435,7 +428,8 @@ void loop(void){
 				//rfmSetInterrupts(DISABLED,100);
 				//EIMSK = (1<<INT0);
 			// Refresh information
-				updateVolts(1);
+				updateVolts(FAST);
+				eltFullSequence();
 				//rfmIntList = rfmGetInterrupts();
 				_delay_ms(2);
 			// Determine nextState using refreshed information
@@ -453,10 +447,10 @@ void loop(void){
 				}
 				eltTransmitCount += 1;
 			// Assert Outputs
+				rfmMode(TX_AFSK);
 				rcOutputs((sys.powerState)? ENABLED : DISABLED);
 				sys.statusLEDs = ENABLED; //(sys.powerState)? ENABLED : DISABLED;
 				uartIntConfig(DISABLED);
-				eltFullSequence();
 				
 			// Configure for next loop and continue
 				_delay_ms(30);
@@ -473,13 +467,13 @@ void loop(void){
 						// ultimately, the LRS never disengages from monitoring: DOWN is the "ground state".
 				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
 			// Refresh information
-				//updateVolts(1);
+				//updateVolts(FAST);
 			// Determine nextState using refreshed information
 				//if(timer10ms > 600){ // 10 Misses in 20 hops (Fix this)
 					//timer10ms = 0;
 					//failsafeCounter = 0;
-					//updateVolts(1); // Very Dangerous. Perhaps just checking for the powerState component?
-					// sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
+					//updateVolts(FAST); // Very Dangerous. Perhaps just checking for the powerState component?
+					sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
 					// sys.state = ((sys.powerState == 0))? SLEEP : ACTIVE; //sticksCentered() && 
 				//  } else sys.state = ACTIVE;
 			// Continue if remaining in current state
@@ -498,19 +492,10 @@ void loop(void){
 				
 				
 				
-				// if((rfmReadReg(RFM_CONTROL_1)& RFM_rxon) != RFM_rxon){
-					// rfmSetInterrupts(ENABLED,100);
-					//EIMSK = (1<<INT0);
-					// rfmWriteReg(RFM_CONTROL_1, RFM_rxon);
-					// // rfmWriteReg(0x27, 100);
-					// printf("Enabled Rx\n");
-				// }
-				
-				
-				if(sys.intSrc.rfm || RFM_INT){
+				if(0){  // sys.intSrc.rfm || RFM_INT){
 					
 					// sys.intSrc.rfm = 0; Move to end to prevent double cycling
-					//rfmSetDlChannel(dlFreqList[dlChannel]);
+					//rfmSetLrsChannel(dlFreqList[dlChannel]);
 					
 					uint8_t rssi = rfmReadReg(0x26);
 					int8_t afcMeasure = rfmReadReg(0x2B); // Is manualFreq>>2 Offset. This 4x + manualFreq is best center
@@ -582,7 +567,7 @@ void loop(void){
 					//dlChannel = (dlChannel > 200)? 0 : dlChannel+1;
 					
 					dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0; 
-					//rfmSetDlChannel(dlFreqList[dlChannel]);
+					//rfmSetLrsChannel(dlFreqList[dlChannel]);
 					
 					// manualFreq = (manualFreq >= 34600)? 3000 : manualFreq + 64;
 					// rfmWriteReg(0x76,manualFreq>>8);		// Freq Carrier 1	Upper Byte
@@ -597,9 +582,14 @@ void loop(void){
 					printf("~%X,%X,%X\n",rfmReadReg(0x02),rfmReadReg(0x04),rfmReadReg(0x07));
 				}
 				
-				if(timer1ms > secLoop+1000){
-					updateVolts(1);
+				if(((uint16_t)timer1ms) > secLoop+1000){
+					secLoop = ((uint16_t)timer1ms);
+					updateVolts(FAST);
 					rcOutputs(ENABLED);
+					//printf("~%X,%X,%X\n",rfmReadReg(0x02),rfmReadReg(0x07),rfmReadReg(0x62));
+					//rcOutputs(DISABLED);
+					//DDRB = 0b00101101;	
+					
 				}
 	
 				//printState();
@@ -616,12 +606,12 @@ void loop(void){
 			// Refresh information
 				// if(sys.intSrc.wdt){ // These should be a separate timer, no WDT
 					// failsafeCounter += 1;
-					// updateVolts(1);
+					// updateVolts(FAST);
 					// sys.intSrc.wdt = 0;
 				// }
 			// Determine nextState using refreshed information
 				if(timer1ms > 8000){
-					updateVolts(1);
+					updateVolts(FAST);
 					sys.state = (sys.powerState)? BEACON : SLEEP;
 					timer1ms = 0;
 				}

@@ -3,16 +3,9 @@
 
 
 // Behavioral Switches
-// #define TRANSMITTER
-#define RECEIVER
-
-#ifdef TRANSMITTER
 #define RFM23BP
+// #define RFM22B
 
-#elif defined(RECEIVER)
-#define RFM22B
-#define BATTERY
-#endif
 
 
 // Debug Switches
@@ -29,8 +22,8 @@
 #define LOOP_PERIOD		2500	// (16000000 Hz / 64) / 100 Hz
 #define BUFFER_SIZE 	128
 #define EEPROM_START	10
-#define LIPOLY_CUTOFF	3400
-#define VIN_CUTOFF		3800
+#define LIPOLY_CUTOFF	3900
+#define VIN_CUTOFF		3900
 
 // System Constants
 #define DOWN 			0 // Configure RFM/SI4432 to interrupt on Rx Packet or RSSI, only wake on this interrupt
@@ -42,12 +35,12 @@
 #define LOW				0
 #define ENABLED			1
 #define DISABLED		0
-#define RFM_READ		0 // RFM Direction Flags
-#define RFM_WRITE		1 
 #define I2C_READ		1 // I2C Direction Flags
 #define I2C_WRITE		0
 // #define SINGLE			0
 // #define MULTI			1
+#define FAST			1
+#define SLOW			0
 
 
 // Port Definitions and Macros
@@ -160,16 +153,11 @@ static struct{
 
 #include "sysUtility.c"
 
-
-
-#if defined(RFM22B)
+#if defined(RFM22B) || defined(RFM23BP)
 	#include "rfm22b.c"
-#elif defined(RFM23BP)
-	#include "rfm23bp.c"
 #else
 	#error "No Radio Transceiver Selected!"
 #endif
-
 
 #include "elt.c"
 

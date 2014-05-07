@@ -1,11 +1,6 @@
 #include "elt.h"
 
 volatile uint16_t eltPulseCount;
-// static volatile struct{ // Huge mess, fix later
-	// union{
-	// }
-	// uint8_t eltAfskPacket[6]; 
-// } eltAfskPacket;
 
 // volatile uint8_t eltAfskPacket[6] = {0b10101100, 0b01100000, 0b11000010, 0b00111011, 0b10010010, 0b01010111};
 volatile uint8_t eltAfskPacket[6] = {'K', 'E', '7', 'Z', 'L', 'H'};
@@ -39,15 +34,6 @@ ISR(TIMER2_COMPA_vect){ // OC2A --> MOSI Pin
 	// TCNT2
 // }
 
-
-
-// f_OC2A_PCPWM = f_clk_io/(N*510) with N= 1,8,32,64,128,256,1024
-
-	// TCCR2A = 
-	// TCCR2B = _BV(CS22)|_BV(CS20); // clk/128
-	// OCR2A = 125; // 1.0 ms
-	// TIMSK2 = (1<<TIOE2); //(1<<OCIE2B);
-
 void systemIdle(void);
 
 void systemIdle(void){
@@ -60,39 +46,22 @@ void systemIdle(void){
 }
 
 void eltFullSequence(void){
-	rfmWriteReg(0x75, 0x53);	// Freq Band		<>
-	rfmWriteReg(0x76, 0x64);	// Freq Carrier 1	<>
-	rfmWriteReg(0x77, 0x00);	// Freq Carrier 0	<>
-	rfmWriteReg(RFM_CONTROL_1, RFM_xton);
+	rfmSetManualFreq(0x6400);
+	rfmMode(IDLE_TUNE);
+	
 	eltTransmit_AFSK();
-	_delay_ms(1);
 	eltTransmit_Packet();
-	_delay_ms(1);
 	eltTransmit_Beacon();
-	_delay_ms(1);
-	rfmWriteReg(RFM_CONTROL_1, 0x00);
+	//rfmMode(IDLE_STANDBY);
 }
 
-
 void eltTransmit_AFSK(void){
-	// Bell 202 is 1200 Hz for a Mark '1', 2200 Hz for Space '0', 1200 bps
-	// I think I'll do a prime orthogonal set
-	// Also, lets do 10 to 20 
-
-
-	if((rfmReadReg(0x07)& RFM_xton) != RFM_xton){
-		for(uint8_t i=0; (i<20) && rfmWriteReg(RFM_CONTROL_1, RFM_xton); i++){
-			_delay_ms(1);
-			if(i==20) printf("2B\n");
-		}
+	for(uint8_t i=0; (i<20) && rfmMode(TX_AFSK); i++){
+		_delay_ms(1);
+		if(i==20) printf("2B\n");
 	}
+	rfmSetRxTx(RFM_txon);
 	
-	rfmWriteReg(0x71, 0x12);		// FSK Async Mode, 
-	rfmWriteReg(0x72, 7);			// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
-	rfmWriteReg(0x6D, 0x08 | AFSK_TX_POWER);
-	
-	rfmWriteReg(RFM_CONTROL_1, RFM_txon);
-	_delay_ms(1);
 	SPCR = 0;
 	TCCR2A = _BV(COM2A0)|_BV(WGM21); //|_BV(WGM20); //WGM21 WGM20
 	TCCR2B = _BV(CS22)|_BV(CS20); //|_BV(WGM22); // clk/128 //WGM22
@@ -102,10 +71,10 @@ void eltTransmit_AFSK(void){
 	// Possible bauds for 440 Hz (2^3, 5, 11 are factors): 40, 88, 55
 	// Prefered Baudrates to be cool: 4800, 2400, 1200, 600, 300, 110 (110 is in list of common bauds)
 	// As I'm totally breaking with the Bell 103 and 202 specs, forget a standard baud, I'm doing 40 bps
-	// The Space representation needs to factor nicly to 40 bps
+	// The "space" representation needs to factor nicly to 40 bps
 	// At 440, 11 iterations is one mark, 11 is prime, choose a prime for the space.
 	// 25 ms per bit, lest do either 17 or 19, which yields 680 and 760 Hz
-	// 23 gives 920
+	// 23 gives 920 Hz
 	for(uint16_t i=0; i<sizeof(eltAfskPacket)*8; i++){
 		uint8_t symbol = (0x01 & eltAfskPacket[i>>3]>>(7 - i%8)); // MSB First
 		uint8_t period = (symbol)? 142 : 68; // Pulse period (actually, half the period of the freq)
@@ -122,98 +91,50 @@ void eltTransmit_AFSK(void){
 	TCCR2B = 0;
 	TIMSK2 = 0;
 	SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR0);
-	_delay_ms(1);
 	
-	rfmWriteReg(RFM_CONTROL_1, RFM_xton);
-	for(uint8_t i=0; (i<200) && (rfmReadReg(0x07)&0x08); i++){
-		_delay_ms(1);
-		if(i==200) printf("1B\n");
-	}
+	rfmMode(IDLE_TUNE);
 }
 
-void eltTransmit_Packet(void){ //uint8_t *targetArray, uint8_t count){
-	
+void eltTransmit_Packet(void){ //uint8_t *targetArray, uint8_t count){	
 	uint8_t index = 0;
 	
-	rfmWriteReg(0x08,0x01);		// FIFO Clear Sequence
-	//_delay_ms(1);					
-	rfmWriteReg(0x08,0x00);		
-	rfmWriteReg(0x6E,0x27);		// Tx Data Rate 1	<>					
-	rfmWriteReg(0x6F,0x52);		// Tx Data Rate 0	9600 Baud	
-	rfmWriteReg(0x71, 0x23);		// GFSK, FIFO Used
-	rfmWriteReg(0x72, 20);		// ~20kHz Peak-Peak Deviation
-	rfmWriteReg(0x6D, 0x08 | 7);	// Max Power
-	
-	if((rfmReadReg(0x07)& RFM_xton) != RFM_xton ){
-		for(uint8_t i=0; (i<20) && rfmWriteReg(RFM_CONTROL_1, RFM_xton); i++){
-			_delay_ms(1);
-			if(i==20) printf("2C\n");
-		}
-	}
+	for(uint8_t i=0; (i<20) && rfmMode(TX_PACKET_4800); i++) _delay_ms(1);
 	
 	//		FCC ID, Lat, Long, UTC Fix, # Sat's, HDOP, Altitude, LiPoly, System In, AtMega
 	//		Slightly Reordered from $GPGGA. Want Lat/Long in front, incase of clock skew, battery lag
+	//snprintf(dataBufferA,BUFFER_SIZE,"UUUU\t"); //Preamble+Sync 0x55 x4 and 0x09
 	snprintf(dataBufferA,BUFFER_SIZE,"KE7ZLH,%+.9li,%+.9li,%.6lu,%u,%u,%+.4i,%u,%u,%u*\n", 
 		(int32_t)gps.lat,(int32_t)gps.lon,(uint32_t)gps.time,gps.sats,gps.hdop,gps.alt,volt.lipoly,volt.sysVin,volt.atMega);
 	
 	//printf("%s",dataBufferA);
 	
-	CS_RFM = LOW;
-		transferSPI((RFM_WRITE<<7) | 0x7F);
-		transferSPI(0x00);
-		for(uint8_t i=0; i<4; i++){
-			transferSPI(0xAA);
-		}
-		transferSPI(0x09);
-		for(; index<50; index++){ // String, obvious consequences if there is no \0 present
-			if(dataBufferA[index] == '\0') break;
-			transferSPI(dataBufferA[index]);
-			//if(i == BUFFER_SIZE) printf("Fail on String\n");
-		}
-	CS_RFM = HIGH;
-	_delay_us(1);
+	index = rfmWriteFIFOStr(dataBufferA);
+	// Redo!!!!!!!!!!!!!!!!!!!!!!!!!  rfmTxPacket();
+	rfmSetRxTx(RFM_txon);
+	_delay_ms(1);
 	
-	rfmWriteReg(RFM_CONTROL_1, RFM_txon);
-
-	for(uint8_t i=0; i<200; i++){
+	for(uint8_t i=0; (i<200) && !rfmGetTxFIFOEmpty(); i++){
 		_delay_ms(1);
-		if(rfmReadReg(0x03)&0x20) break;
 		if(i==200) printf("1C\n");
 	}
 	
-	CS_RFM = LOW;
-		transferSPI((RFM_WRITE<<7) | 0x7F);
-		for(; index<BUFFER_SIZE; index++){
-			if(dataBufferA[index] == '\0') break;
-			transferSPI(dataBufferA[index]);
-		}
-	CS_RFM = HIGH;
-	_delay_us(1);
+	index = rfmWriteFIFOStr(dataBufferA+index);
 	
-	for(uint8_t i=0; (i<200) && (rfmReadReg(0x07)&0x08); i++){
+	// Redo !!!!!!!!!!! for(uint8_t i=0; (i<200) && rfmTxPacket(); i++){
+	for(uint8_t i=0; (i<200) && rfmGetRxTx(RFM_txon); i++){
 		_delay_ms(1);
 		if(i==200) printf("3C\n");
 	}
 	
-	rfmWriteReg(RFM_CONTROL_1, RFM_xton);
+	rfmMode(IDLE_TUNE);
 }
 
 void eltTransmit_Beacon(void){
-	if((rfmReadReg(0x07)& RFM_xton) != RFM_xton ){
-		for(uint8_t i=0; (i<20) && rfmWriteReg(RFM_CONTROL_1, RFM_xton); i++){
-			_delay_ms(1);
-			if(i==20) printf("2A\n");
-		}
-	}
-	
-	rfmWriteReg(0x71, 0x12);		// FSK Async Mode, 
-	rfmWriteReg(0x72, 7);			// Frequency deviation is 625 Hz * value (Centered, so actual peak-peak deviation is 2x)
-	
-	//_delay_ms(1);
+	for(uint8_t i=0; (i<20) && rfmMode(TX_AFSK); i++) _delay_ms(1);
 	
 	for(uint8_t n=1; n<BEACON_NOTES; n++){ // n=0 for no AFSK, but as the AFSK packet is A4/A5 notes, it replaces A4 here
-		rfmWriteReg(0x6D, 0x08 | beaconNotes[n][2]);
-		rfmWriteReg(RFM_CONTROL_1, RFM_txon);
+		rfmSetTxPower(beaconNotes[n][2]);
+		rfmSetRxTx(RFM_txon);
 		_delay_ms(1);
 		SPCR = 0;
 		CS_RFM = HIGH;
@@ -248,9 +169,5 @@ void eltTransmit_Beacon(void){
 		_delay_ms(1);
 	}
 	
-	rfmWriteReg(RFM_CONTROL_1, RFM_xton);
-	for(uint8_t i=0; (i<200) && (rfmReadReg(0x07)&0x08); i++){
-		_delay_ms(1);
-		if(i==200) printf("1A\n");
-	}
+	for(uint8_t i=0; (i<200) && rfmMode(IDLE_TUNE); i++) _delay_ms(1);
 }

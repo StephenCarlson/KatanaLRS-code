@@ -15,9 +15,9 @@
 	// 0x08			0x00				// Control 2								RW
 	// 0x09			0x7F				// Xtal Cap 		Default @ 12.5pF		RW
 	// 0x0A			0x06				// uC Output Clk	1 MHz					RW		xx
-	// 0x0B			0x00				// GPIO1 			POR						RW
-	// 0x0C			0x00				// GPIO2 			/POR					RW
-	// 0x0D			0x00				// GPIO3 			uC Clk Output			RW
+	// 0x0B			0x00				// GPIO0 			POR						RW
+	// 0x0C			0x00				// GPIO1 			/POR					RW
+	// 0x0D			0x00				// GPIO2 			uC Clk Output			RW
 	// 0x0E			0x00				// I/O Ports								RW
 	// 0x0F			0x00				// ADC Config 								RW
 	// 0x10			0x00				// ADC Offset								RW		xxxx
@@ -142,9 +142,9 @@
 	// 0x09			0x7F				// Xtal Cap 		Default @ 12.5pF		RW
 
 // RFM Ports, GPIO, and uC Interface
-	// 0x0B			0x00				// GPIO1 			POR						RW
-	// 0x0C			0x00				// GPIO2 			/POR					RW
-	// 0x0D			0x00				// GPIO3 			uC Clk Output			RW
+	// 0x0B			0x00				// GPIO0 			POR						RW
+	// 0x0C			0x00				// GPIO1 			/POR					RW
+	// 0x0D			0x00				// GPIO2 			uC Clk Output			RW
 	// 0x0E			0x00				// I/O Ports								RW
 	// 0x05			0x00				// Int Enable 1								RW
 	// 0x06			0x03				// Int Enable 2		Chip Ready and POR		RW
@@ -242,9 +242,6 @@
 	// 0x7D			0x04				// Tx FIFO Ctrl 2	Tx Almost Empt @ 4		RW
 	// 0x7E			0x37				// Rx FIFO Ctrl		Rx Almost Full @ 55		RW
 	// 0x7F			-					// FIFO				FIFOs are 64B each		RW
-
-
-
 
 
 
@@ -642,22 +639,36 @@
 
 #define RFM_FIFO			0x7F
 
+
+
+#define MAX_TX_POWER	7
+
+#define RFMCFG_FHSS		1
+#define RFMCFG_4800		2
+#define RFMCFG_AFSK		3
+
 const uint8_t rfmConfig_Core[][2] = { // Start the device inert but ready, interrupts set
 	// Set critical components in priority order
 	{0x09,	0x7F},			// Xtal Cap 		Default @ 12.5pF
-	{0x0B,	RFM_p_TX_ST},	// GPIO1 			Tx
-	{0x0C,	RFM_p_RX_ST},	// GPIO2 			Rx
-	{0x0D,	RFM_p_RX_OUT},	// GPIO3 			Sync=11011 RxData=10100 Preamble=11001 RxFifoFull=10110 RxState=10101 WUT=00001
-	{0x0E,	0},				// I/O Ports		None
+	#if defined(RFM23BP)
+	{RFM_GPIO_0,	RFM_p_DDO},		// GPIO0 			/Rx (Low-Asserted)
+	{RFM_GPIO_1,	RFM_p_DDO},		// GPIO1 			/Tx (Low-Asserted)
+	{0x0E,(RFM_dio1 | RFM_dio0)},	// I/O Ports		Both high for idle, may also be High-Z
+	#else
+	{RFM_GPIO_0,	RFM_p_RX_ST},	// GPIO0 			Rx
+	{RFM_GPIO_1,	RFM_p_TX_ST},	// GPIO1 			Tx
+	{0x0E,	0x00},					// I/O Ports		None
+	#endif
+	{RFM_GPIO_2,	RFM_p_RX_OUT},	// GPIO2 		RFM_p_PMBL RFM_p_RX_OUT RFM_p_WUT	Sync=11011 RxData=10100 Preamble=11001 RxFifoFull=10110 RxState=10101 WUT=00001
 	{0x05,	0x00},			// Int Enable 1		
-	{0x06,	0x03},			// Int Enable 2		Chip Ready and POR
-	{0x07,	RFM_xton},		// Control 1		Xtal On (Ready)
-	{0x08,	0},				// Control 2		
+	{0x06,	0x00},			// Int Enable 2		
+	{0x07,	0x00},			// Control 1		Standby
+	{0x08,	0x00},			// Control 2		
 	
 	// Disable OOK Module
-	{0x2C,0},				// OOK Control		Disabled
-	{0x2D,0},				// OOK Counter		Disabled
-	{0x2E,0},				// OOK Slicer		Disabled
+	{0x2C,0x00},			// OOK Control		Disabled
+	{0x2D,0x00},			// OOK Counter		Disabled
+	{0x2E,0x00},			// OOK Slicer		Disabled
 	
 	// Disable various auxiliary devices that are not used
 	{0x0A,0x07},			// uC Output Clk	32 kHz
@@ -676,13 +687,40 @@ const uint8_t rfmConfig_Core[][2] = { // Start the device inert but ready, inter
 	
 	// 430 MHz Band, +5kHz Calibration, FHSS Off
 	{0x73,0},			// Freq Offset 1	+5 kHz Calibration					
-	{0x74,0x00},		// Freq Offset 2						
+	{0x74,0},			// Freq Offset 2						
 	{0x75,0x53},		// Freq Band		430 MHz Band	
 	{0x79,0x00},		// FHSS Channel							
 	{0x7A,0x00},		// FHSS Step Size							
 
 };
-const uint8_t rfmConfig_DragonLinkCompat[][2] = {
+const uint8_t rfmConfig_ModeConfigs[][4] = {
+//	 Addr,FHSS,4800,3500/AFSK								FHSS		4800		3500/AFSK
+	{0x1C,0x27,0x2B,0x2B},		// IF B/W					
+	{0x1F,0x03,0x03,0x03},      // Clk Gear					
+	{0x20,0x68,0xD0,0x1E},      // Clk Ratio				
+	{0x21,0x01,0x00,0x20},      // Clk Offset 2				
+	{0x22,0x3A,0x9D,0x72},      // Clk Offset 1				
+	{0x23,0x93,0x49,0xB0},      // Clk Offset 0				
+	{0x24,0x04,0x00,0x00},      // Clk Gain 1				
+	{0x25,0x62,0x99,0xA2},      // Clk Gain 0				
+	{0x1D,0x04,0x44,0x44},      // AFC Gear					
+	{0x1E,0x0A,0x0A,0x0A},      // AFC Timing				
+	{0x2A,0x1D,0x1D,0x30},      // AFC Limit				+/-18kHz	+/-18kHz	+/-30kHz
+	{0x69,0x60,0x60,0x60},		// AGC Override				
+	
+	{0x6D,0x08,0x08,0x08},		// Tx Power					All: Direct-Tie Config, Lowest Power
+	{0x6E,0x4E,0x27,0x1C},      // Tx Data Rate 1			9600bps		4800bps		"3500bps"
+	{0x6F,0xA5,0x52,0xAC},      // Tx Data Rate 0			
+	{0x70,0x20,0x20,0x20},      // Modulation 1				All: PH Disabled in Sleep, sub-30kbps
+	{0x71,0x23,0x23,0x12},      // Modulation 2				GFSK FIFO	GFSK FIFO	FSK Direct
+	{0x72,0x09,0x14,0x08},      // Freq Deviation			+/-5.6kHz	12.5kHz		+/-5kHz
+	{0x76,0x0C,0x64,0x64},      // Freq Carrier 1			430.500		434.000		434.000
+	{0x77,0x80,0x00,0x00},      // Freq Carrier 0			
+	
+	// {0x08,0x00,0x00,0x00},	// Low-Duty-Cycle			LDC Off		LDC Off		LDC On for 3500
+	{0x30,0xC0,0x80,0x00},		// Packet Handler			PH, LSB		PH			None
+};
+const uint8_t rfmConfig_FhssConfig[][2] = {
 	// Freq Range between 430.5 and 434.950 MHz, Center is 432.725
 	// 9600 Baud
 	// 5.4 kHz Deviation
@@ -691,6 +729,100 @@ const uint8_t rfmConfig_DragonLinkCompat[][2] = {
 	// fb=19 (10 MHz Increments), fo=32 (+5 kHz Up Tick), fc=3200 (500 kHz)
 	// fo can only shift by +/-80 kHz, 2's comp
 	// Use fc as channel select mechanism, unsigned for 10 MHz span
+	
+	// 00001100 10000010 10110000 11111110 11111110 01001000 11111110 00000110 10000011 11111110 00010101 10000110 11100001 01001101
+	// A   B      C        D        E1       E2       E3       E4       E5       E6       E7       E8       E9       F1       F2
+	// 
+	// A	Flags: Bind and Failsafe Inactive
+	// B	Byte Count: 12 Bytes beyond ID byte (D)
+	// C	System ID: 0x82
+	// D	MSB's for lower 8 channels
+	// En	9 Channels Payload
+	// F1	Upper Byte of CRC-16 IBM/ARC
+	// F2	Lower Byte of CRC-16 IBM/ARC
+	
+	// Packet and FIFO
+	// {0x30,0xC0},		// Data Ctrl		Packet Handler LSB First
+	{0x32,0x07},		// Header Ctrl 1	Rx'd Hdr is Byte 3,2
+	{0x33,0x38},		// Header Ctrl 2	Hdr Defined by 3E ; Sync 3,2,0	
+	{0x34,0x03},		// Preamble Length	3 nibbles
+	{0x35,0x18},		// Preamble Detect	3 nibbles
+	// {0x60,0x00},		// Preamble	Thresh						
+	{0x36,0x15},		// Sync Word 3		90, D0
+	{0x37,0x00},		// Sync Word 2		42, 50					
+	{0x38,0x00},		// Sync Word 1		Always E1					
+	{0x39,0x00},		// Sync Word 0							
+	{0x3A,0x00},		// Tx Header 3							
+	{0x3B,0x00},		// Tx Header 2							
+	{0x3C,0x00},		// Tx Header 1							
+	{0x3D,0x00},		// Tx Header 0							
+	{0x3E,0x0D},		// Tx Pkt Length	13 Bytes per packet
+	{0x3F,0x34},		// Check Header 3						
+	{0x40,0x54},		// Check Header 2						
+	{0x41,0x78},		// Check Header 1						
+	{0x42,0x00},		// Check Header 0						
+	{0x43,0x0F},		// Header Enable 3	All bits compared	
+	{0x44,0xF3},		// Header Enable 2	All bits compared	
+	{0x45,0xFF},		// Header Enable 1	All bits compared	
+	{0x46,0x00},		// Header Enable 0	All bits compared	
+	{0x7C,0x3C},		// Tx FIFO Ctrl 1	Tx Almost Full @ 60	
+	{0x7D,0x04},		// Tx FIFO Ctrl 2	Tx Almost Empt @ 4	
+	{0x7E,0x20},		// Rx FIFO Ctrl		Rx Almost Full @ 32	
+	
+};
+/*
+// const uint8_t rfmConfig_ToneConfig[][2] = {
+	{0x30,0x00},		// Packet Handler off, 
+	// {0x30,0x80},		// Packet Handler on, 
+	// {0x32,0x01},		// 1 Headers
+	// {0x33,0x18},		// 1 Headers, 1 Sync
+	{0x34,0x20},		// 64 nibble = 32 byte preamble
+	{0x35,0x20},		// 0x35 need to detect 20bit preamble
+	// {0x60,0x00},		// Preamble	Thresh
+	{0x36,0x55},
+	// {0x3E,0x0F},
+	// {0x3F,0x55},
+	// {0x40,0x55},
+	// {0x43,0xFF},
+	// {0x44,0xFF},
+	// {0x7E,0x20},
+// }
+*/
+
+uint8_t rfmReset(void);
+uint8_t rfmMode(uint8_t);
+// uint8_t rfmTxPacket(void);
+// void rfmTxDirect(uint8_t);
+void rfmSetRxTx(uint8_t);
+uint8_t rfmGetRxTx(uint8_t);
+void rfmSetInterrupts(uint8_t, uint8_t);
+uint16_t rfmGetInterrupts(void);
+void rfmSetLrsChannel(uint8_t);
+uint8_t rfmSetManualFreq(uint16_t);
+void rfmSetTxPower(uint8_t);
+uint8_t rfmGetRSSI(void);
+uint8_t rfmReadReg(uint8_t);
+uint8_t rfmWriteReg(uint8_t, uint8_t);
+void rfmReadFIFO(uint8_t *array);
+uint8_t rfmWriteFIFOStr(char *array);
+uint8_t rfmGetTxFIFOEmpty(void);
+void rfmClearTxFIFO(void);
+void rfmClearRxFIFO(void);
+
+
+
+#endif // RFM22B_H
+
+
+
+
+
+
+
+
+#if defined(Notes_for_here)
+
+
 	
 	// ..11111101010101010101 00000100 10100001 01000011 11011000 0.....
 	// Idle   | Preamble    |
@@ -759,6 +891,7 @@ const uint8_t rfmConfig_DragonLinkCompat[][2] = {
 	// Each channel is visited ever 489.2 ms, meaning there are 22 channels
 	// For 0xE1, there are 22 channels. Others are less, but all are 45 Hz.
 	
+	/*
 	// Frequency Configuration
 	{0x1C,0x27},		// IF B/W			75.2 kHz	// Only Value Freq Sensitive
 	{0x1F,0x03},		// Clk Gear			<>	
@@ -775,58 +908,24 @@ const uint8_t rfmConfig_DragonLinkCompat[][2] = {
 	// Amplifier
 	// Allow to default {0x62,0x04},		// Xtal / Test		2x Amplify	
 	{0x69,0x60},		// AGC Override		AGC Enabled		
-	
-	
-	// 00001100 10000010 10110000 11111110 11111110 01001000 11111110 00000110 10000011 11111110 00010101 10000110 11100001 01001101
-	// A   B      C        D        E1       E2       E3       E4       E5       E6       E7       E8       E9       F1       F2
-	// 
-	// A	Flags: Bind and Failsafe Inactive
-	// B	Byte Count: 12 Bytes beyond ID byte (D)
-	// C	System ID: 0x82
-	// D	MSB's for lower 8 channels
-	// En	9 Channels Payload
-	// F1	Upper Byte of CRC-16 IBM/ARC
-	// F2	Lower Byte of CRC-16 IBM/ARC
-	
-	// Packet and FIFO
-	{0x30,0xC0},		// Data Ctrl		Packet Handler LSB First
-	{0x32,0x07},		// Header Ctrl 1	Rx'd Hdr is Byte 3,2
-	{0x33,0x38},		// Header Ctrl 2	Hdr Defined by 3E ; Sync 3,2,0	
-	{0x34,0x03},		// Preamble Length	3 nibbles
-	{0x35,0x18},		// Preamble Detect	3 nibbles
-	{0x60,0x00},		// Preamble	Thresh						
-	{0x36,0x15},		// Sync Word 3		90, D0
-	{0x37,0x00},		// Sync Word 2		42, 50					
-	{0x38,0x00},		// Sync Word 1		Always E1					
-	{0x39,0x00},		// Sync Word 0							
-	{0x3A,0x00},		// Tx Header 3							
-	{0x3B,0x00},		// Tx Header 2							
-	{0x3C,0x00},		// Tx Header 1							
-	{0x3D,0x00},		// Tx Header 0							
-	{0x3E,0x0D},		// Tx Pkt Length	13 Bytes per packet
-	{0x3F,0x34},		// Check Header 3						
-	{0x40,0x54},		// Check Header 2						
-	{0x41,0x78},		// Check Header 1						
-	{0x42,0x00},		// Check Header 0						
-	{0x43,0x0F},		// Header Enable 3	All bits compared	
-	{0x44,0xF3},		// Header Enable 2	All bits compared	
-	{0x45,0xFF},		// Header Enable 1	All bits compared	
-	{0x46,0x00},		// Header Enable 0	All bits compared	
-	{0x7C,0x37},		// Tx FIFO Ctrl 1	Tx Almost Full @ 55	
-	{0x7D,0x04},		// Tx FIFO Ctrl 2	Tx Almost Empt @ 4	
-	{0x7E,0x20},		// Rx FIFO Ctrl		Rx Almost Full @ 32	
-	
+	*/
+
+	/*
 	// Modulation
 	{0x6D,0x08},		// Tx Power			LNA Sw Active, -1dBm
 	{0x6E,0x4E},		// Tx Data Rate 1	<>					
 	{0x6F,0xA5},		// Tx Data Rate 0	9600 Baud				
-	{0x70,0x20},		// Modulation 1		Normal				
+	{0x70,0x30},		// Modulation 1		Normal, no PH in LDC				
 	{0x71,0x23},		// Modulation 2		FIFO GFSK		
 	{0x72,0x09},		// Freq Deviation	<>					
 	{0x76,0x0C},		// Freq Carrier 1	<>					
 	{0x77,0x80},		// Freq Carrier 0	<>					
-};
-const uint8_t rfmConfig_AccessTone[][2] = {
+	*/
+
+
+
+// const uint8_t rfmConfig_AccessTone[][2] = {
+	/*
 	// Frequency: 434 MHz 3500 bit/sec @ 5 kHz Dev, for detecting a 1750 Hz Tone
 	{0x1C, 0x2B},		// IF Filter Bandwidth
 	{0x1F, 0x03},		// Clock Recovery Gearshift Override
@@ -840,13 +939,17 @@ const uint8_t rfmConfig_AccessTone[][2] = {
 	{0x1E, 0x0A},		// AFC Timing Control
 	{0x2A, 0x30},		// AFC Limiter
 	{0x69,0x60},		// AGC Override		AGC Enabled	
+	*/
 	
 	// Packet
+	//{0x30,0x00},		// Packet Handler off, 
+	/*
 	{0x30,0x80},		// Packet Handler on, 
 	{0x32,0x01},		// 1 Headers
 	{0x33,0x18},		// 1 Headers, 1 Sync
 	{0x34,0x20},		// 64 nibble = 32 byte preamble
 	{0x35,0x20},		// 0x35 need to detect 20bit preamble
+	{0x60,0x00},		// Preamble	Thresh
 	{0x36,0x55},
 	// {0x37,0x55},
 	// {0x38,0x55},
@@ -858,44 +961,21 @@ const uint8_t rfmConfig_AccessTone[][2] = {
 	// {0x44,0xFF},
 	{0x7E,0x20},
 	
-	{0x60,0x00},		// Preamble	Thresh
-	// ...
-	
+	*/
+	/*
 	// Modulation
 	{0x6D,0x08},		// Tx Power			LNA Sw Active, -1dBm
 	{0x6E,0x1C},		// Tx Data Rate 1	<>					
-	{0x6F,0xAC},		// Tx Data Rate 0	40 kbps				
-	{0x70,0x20},		// Modulation 1		Normal				
-	{0x71,0x23},		// Modulation 2		No Modulation		
+	{0x6F,0xAC},		// Tx Data Rate 0	3500 bit/s				
+	{0x70,0x30},		// Modulation 1		Normal, PH off in LDC		
+	{0x71,0x23},		// Modulation 2		GFSK		
 	{0x72,0x08},		// Freq Deviation	<>								
 	{0x76,0x64},		// Freq Carrier 1	434 MHz					
 	{0x77,0x00},		// Freq Carrier 0	<>					
-	
-	// LDC
-	{0x14, 7},			// R in T_WUT = 4 * M * 2^R / 32768, .015625*M ms for R=7 (2^7=128)
-	{0x15, 0},			// M[15:8]
-	{0x16, 128},		// M[7:0]
-	{0x19, 1},			// LDC in T_LDC_ON = 4 * LDC * 2^R / 32768
-	
-	// Device State
-	// {0x07, RFM_xton},
-	
+	*/
 	// Preamble is 1750 -- 3500 bps, .032 sec -> 56 bits, can capture 16 bits in that time
 	// .016 TLDC is .015625 * 32768 /4 
-};
-
-
-void rfmSetMode(uint8_t);
-void rfmSetInterrupts(uint8_t, uint8_t);
-uint16_t rfmGetInterrupts(void);
-void rfmSetDlChannel(uint8_t);
-uint8_t rfmGetRSSI(void);
-uint8_t rfmReadReg(uint8_t);
-uint8_t rfmWriteReg(uint8_t, uint8_t);
-void rfmReadFIFO(uint8_t *array);
-
-
-#endif // RFM22B_H
+// };
 
 
 
@@ -904,7 +984,6 @@ void rfmReadFIFO(uint8_t *array);
 
 
 
-#if defined(Notes_for_here)
 
 // Pesudo-code
 

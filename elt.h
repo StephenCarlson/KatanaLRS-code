@@ -1,8 +1,6 @@
 #ifndef ELT_H
 #define ELT_H
 
-
-#define AFSK_TX_POWER	7
 // FCC ID, Lat, Long, UTC Fix, # Sat's, HDOP, Altitude, LiPoly, System In, AtMega
 const uint8_t fccId[] = "KE7ZLH";
 
