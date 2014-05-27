@@ -33,44 +33,42 @@ uint8_t rfmReset(void){
 }
 
 uint8_t rfmMode(uint8_t mode){
-	// Returns non-zero if new transition or RFM state mechanism transitioning
+	// Returns non-zero if the the system is in the correct state, zero otherwise
 	static uint8_t currentMode = 99;
 	
 	if(currentMode == mode){ // If we already have commanded this mode, poll for completed transition
 		switch(mode){
 			case IDLE_TUNE:
-				return( ((rfmReadReg(0x02)&0x03)^0x00)|((rfmReadReg(0x07)&0x0F)^0x02) );
+				return !((rfmReadReg(0x62)>>5)^0x03); // TUNE
 				break;
 			case IDLE_READY:
-				return( ((rfmReadReg(0x02)&0x03)^0x00)|((rfmReadReg(0x07)&0x0F)^0x01) );
+				return !((rfmReadReg(0x62)>>5)^0x01); // RDY
 				break;
 			case RX_FHSS_LRS:
-				return( ((rfmReadReg(0x02)&0x03)^0x01)|((rfmReadReg(0x07)&0x0F)^0x04) );
+				return !((rfmReadReg(0x62)>>5)^0x07); // RX
 				break;
 			case RX_TONE_LDC:
-				return( ((rfmReadReg(0x02)&0x03)^0x00)|((rfmReadReg(0x07)&0x0F)^0x00)|((rfmReadReg(0x08)&0x04)^0x04) );
+				return !( ((rfmReadReg(0x62)>>5)^0x00)|((rfmReadReg(0x08)&0x04)^0x04) ); // LP and LDC
 				break;
 			case TX_AFSK:
-				return( ((rfmReadReg(0x02)&0x03)^0x02)|((rfmReadReg(0x07)&0x0F)^0x08) );
+				return !((rfmReadReg(0x62)>>5)^0x03); // TUNE //TX
 				break;
-			case TX_PACKET_4800: // Ah, tricky as Tx FIFO loaded, then Tx manually on? Or allow auto Tx?
-				//return( ((rfmReadReg(0x02)&0x03)^0x02)|((rfmReadReg(0x07)&0x0F)^0x00) );
-				//return( ((rfmReadReg(0x03)&0x04)^0x04) );
-				return( ((rfmReadReg(0x02)&0x03)^0x00)|((rfmReadReg(0x07)&0x02)^0x02) );
+			case TX_PACKET_4800:
+				return !((rfmReadReg(0x62)>>5)^0x03); // TUNE
 				break;
 			default:
-				return( ((rfmReadReg(0x02)&0x03)^0x00)|((rfmReadReg(0x07)&0x0F)^0x00)|((rfmReadReg(0x08)&0x04)^0x00) );
+				return !( ((rfmReadReg(0x62)>>5)^0x00)|((rfmReadReg(0x08)&0x04)^0x00) ); // LP and no LDC
 		}
 	} else{
 		mode = (currentMode == 99)? IDLE_STANDBY : mode;
 		switch(mode){
 			case IDLE_TUNE:
-				rfmSetRxTx(0);
+				rfmSetRxTxSw(0);
 				rfmWriteReg(0x07, 0x02);
 				break;
 				
 			case IDLE_READY:
-				rfmSetRxTx(0);
+				rfmSetRxTxSw(0);
 				rfmWriteReg(0x07, 0x01);
 				break;
 				
@@ -79,33 +77,38 @@ uint8_t rfmMode(uint8_t mode){
 					rfmWriteReg(rfmConfig_ModeConfigs[i][0],rfmConfig_ModeConfigs[i][RFMCFG_FHSS]);
 				for(uint8_t i=0; i<sizeof(rfmConfig_FhssConfig)/2;i++) \
 					rfmWriteReg(rfmConfig_FhssConfig[i][0],rfmConfig_FhssConfig[i][1]);
-				rfmSetRxTx(RFM_rxon);
-				rfmWriteReg(0x08, 0);		// LDC Off
+				rfmClearRxFIFO();
+				rfmSetRxTxSw(RFM_rxon);
+				rfmWriteReg(0x07, RFM_rxon);		// Idle Standby
 				rfmWriteReg(0x05, 0x02);	// Valid Packet
 				rfmWriteReg(0x06, 0);
+				rfmWriteReg(0x08, 0);		// LDC Off
 				break;
 			
 			case RX_TONE_LDC: // 3500 "Baud" on 434.000
 				for(uint8_t i=0; i<sizeof(rfmConfig_ModeConfigs)/4;i++) \
 					rfmWriteReg(rfmConfig_ModeConfigs[i][0],rfmConfig_ModeConfigs[i][RFMCFG_AFSK]);
-				rfmSetRxTx(RFM_rxon);
+				rfmSetRxTxSw(RFM_rxon);			// Set the RF Switch to RX
 				rfmWriteReg(0x07, 0);			// Idle Standby
-				rfmWriteReg(0x08, (1<<2));		// Enable LDC Mode
 				rfmWriteReg(0x05, 0);		
 				rfmWriteReg(0x06, 0x80);		// Valid Sync
+				rfmWriteReg(0x08, (1<<2));		// Enable LDC Mode
 				rfmWriteReg(0x71, 0x22);		// Set for FIFO, needed for Sync to work?
-				rfmWriteReg(0x34,0x20);
-				rfmWriteReg(0x35,0x20);
+				rfmWriteReg(0x33,0x08);
+				rfmWriteReg(0x34,0x30);
+				rfmWriteReg(0x35,0x30);
 				rfmWriteReg(0x36,0x55);
 				break; // As this and next are similiar/cloned, could remove break.
 			
 			case TX_AFSK: // 440 and 920 Hz tokens at 40 Baud on 434.000
 				for(uint8_t i=0; i<sizeof(rfmConfig_ModeConfigs)/4;i++) \
 					rfmWriteReg(rfmConfig_ModeConfigs[i][0],rfmConfig_ModeConfigs[i][RFMCFG_AFSK]);
-				rfmWriteReg(0x08, 0);			// Disable LDC
-				rfmWriteReg(0x6D, 0x08);	// Max Power  | MAX_TX_POWER
+				// rfmSetRxTxSw(RFM_txon);
+				rfmWriteReg(0x07, 0x02);	
 				rfmWriteReg(0x05, 0);	
 				rfmWriteReg(0x06, 0);	
+				rfmWriteReg(0x08, 0);			// Disable LDC
+				rfmWriteReg(0x6D, 0x08);		// Max Power  | MAX_TX_POWER
 				rfmWriteReg(0x71, 0x12);		// Direct Mode
 				break;
 				
@@ -113,26 +116,31 @@ uint8_t rfmMode(uint8_t mode){
 				for(uint8_t i=0; i<sizeof(rfmConfig_ModeConfigs)/4;i++) \
 					rfmWriteReg(rfmConfig_ModeConfigs[i][0],rfmConfig_ModeConfigs[i][RFMCFG_4800]);
 				rfmClearTxFIFO();
-				rfmWriteReg(0x08, 0x08);			// Disable LDC, Packet Auto-Tx
-				rfmWriteReg(0x6D, 0x08 );	// Max Power | MAX_TX_POWER
+				rfmSetRxTxSw(0);
+				rfmWriteReg(0x07, 0x02);
 				rfmWriteReg(0x05, 0);	
 				rfmWriteReg(0x06, 0);	
+				// rfmWriteReg(0x08, 0x08);		// Disable LDC, Packet Auto-Tx
+				rfmWriteReg(0x08, 0);			// Disable LDC
+				rfmWriteReg(0x6D, 0x08);		// Max Power | MAX_TX_POWER
 				break;
 			
 			case IDLE_STANDBY: // Drop thru to default
 			default:
-				// currentMode = mode = IDLE_STANDBY;
+				mode = IDLE_STANDBY;
 				for(uint8_t i=0; i<sizeof(rfmConfig_Core)/2;i++){
 					rfmWriteReg(rfmConfig_Core[i][0],rfmConfig_Core[i][1]);
 				}
-				rfmSetRxTx(0);
+				rfmSetRxTxSw(0);
+				rfmWriteReg(0x07, 0);
+				rfmWriteReg(0x05, 0);	
+				rfmWriteReg(0x06, 0);
+				rfmWriteReg(0x08, 0);
 				rfmWriteReg(0x62, 0x04);
 				rfmWriteReg(0x6D, 0x08);
-				rfmWriteReg(0x05, 0);	
-				rfmWriteReg(0x06, 0);	
 		}
 		currentMode = mode;
-		return(1);
+		return(0);
 	}
 }
 
@@ -146,7 +154,7 @@ uint8_t rfmMode(uint8_t mode){
 	// rfmWriteReg(RFM_CONTROL_1, (active)? RFM_txon : 0);
 // }
 
-void rfmSetRxTx(uint8_t state){
+void rfmSetRxTxSw(uint8_t state){
 	#if defined(RFM23BP)
 		// Critical Note! The RFM23BP is LOW-Asserted for the RF switch
 		// Thus, Rx->0 (low) and Tx-> 1 (high) for Rx, backward from RFM22B
@@ -163,7 +171,7 @@ void rfmSetRxTx(uint8_t state){
 	
 	#endif // RFM23BP
 	
-	rfmWriteReg(RFM_CONTROL_1, (state&RFM_rxon)? RFM_rxon : (state&RFM_txon)? RFM_txon : 0);
+	// rfmWriteReg(RFM_CONTROL_1, (state&RFM_rxon)? RFM_rxon : (state&RFM_txon)? RFM_txon : 0);
 }
 
 
@@ -240,6 +248,7 @@ void rfmSetTxPower(uint8_t power){
 
 uint8_t rfmGetRSSI(void){
 	uint8_t rssiMeasure = 0;
+	/*
 	if((rfmReadReg(RFM_CONTROL_1)& RFM_rxon) != RFM_rxon){
 		// printf("%X\n",rfmReadReg(RFM_CONTROL_1));
 		rfmWriteReg(RFM_CONTROL_1, RFM_rxon);
@@ -263,6 +272,10 @@ uint8_t rfmGetRSSI(void){
 		rssiMeasure = rfmReadReg(0x26);
 		rfmWriteReg(RFM_CONTROL_1, 0); //RFM_xton);
 	} else rssiMeasure = rfmReadReg(0x26);
+	*/
+	rssiMeasure = rfmReadReg(0x26);
+	
+	// Huge warning!!! <steve> Do not Write-Read cycle the 0x07 register, it triggers a soft reset
 	
 	return rssiMeasure; //
 }
@@ -270,7 +283,8 @@ uint8_t rfmGetRSSI(void){
 uint8_t rfmReadReg(uint8_t regAddress){
 	CS_RFM = LOW;
 		transferSPI(regAddress);
-		uint8_t value = transferSPI(0x00);
+		_delay_us(1);
+		uint8_t value = transferSPI(0xFF); // Seems that the line likes to rest high
 	CS_RFM = HIGH;
 	_delay_us(1);
 	return value;
@@ -279,16 +293,29 @@ uint8_t rfmReadReg(uint8_t regAddress){
 uint8_t rfmWriteReg(uint8_t regAddress, uint8_t regValue){
 	CS_RFM = LOW;
 		transferSPI(RFM_WRITE | regAddress);
+		_delay_us(1);
 		transferSPI(regValue);
 	CS_RFM = HIGH;
 	_delay_us(2);
 	uint8_t readBack = rfmReadReg(regAddress)^(regValue);
+	if(readBack) LED_OR = HIGH;
 	rfmWriteErrors += (readBack)? 1 : 0;
-	if(readBack){
-		LED_OR = HIGH;
-		_delay_us(10);
-		LED_OR = LOW;
+	for(uint8_t i=0; (i<10) && (readBack); i++){
+	//if(readBack){
+		/*
+		CS_RFM = LOW;
+			transferSPI(RFM_WRITE | regAddress);
+			//_delay_us(1);
+			transferSPI(regValue);
+		CS_RFM = HIGH;
+		_delay_us(50);
+		*/
+		readBack = rfmReadReg(regAddress)^(regValue);
+		
+		// LED_OR = HIGH;
+		_delay_us(50);
 	}
+		LED_OR = LOW;
 	return readBack; //(readBack)? readBack : 0; Seems I check for not working more than working.
 }
 
@@ -309,7 +336,7 @@ uint8_t rfmWriteFIFOStr(char *array){ //, uint8_t index){
 		transferSPI(0xFF);
 		// for(uint8_t i=index; i<(64-index); i++){
 		for(uint8_t i=0; i<64; i++){
-			if(dataBufferA[i] == '\0') break;
+			if(array[i] == '\0') break;
 			transferSPI(array[i]);
 			count++;
 		}

@@ -81,11 +81,11 @@ void printHelpInfo(void);
 
 // Interrupt Vectors (Listed in Priority Order)
 ISR(INT0_vect){
-	LED_OR = HIGH;
+	// LED_OR = HIGH;
 	sys.intSrc.rfm = 1;
 	timestamp = timer1ms;
 	
-	dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0; 
+	// dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0; 
 	//EIMSK = 0;
 }
 
@@ -105,7 +105,7 @@ ISR(WDT_vect){
 	
 // }
 
-ISR(TIMER1_OVF_vect ){ // May want to redo as if/else structure, more efficient?
+ISR(TIMER1_OVF_vect ){
 	switch(ch){
 		case 0:
 			PWM_1 = HIGH;
@@ -116,8 +116,8 @@ ISR(TIMER1_OVF_vect ){ // May want to redo as if/else structure, more efficient?
 		case 1:
 			PWM_1 = LOW;
 			PWM_2 = HIGH;
-			ICR1 = pwmValues[ch]; // Not Relevant: Loss of precision in favor of uSec representation in pwmValues[]
-			pwmFrameSum += pwmValues[ch]; // 65535 is the max for pwmFrameSum, max ch PWM width is 8192 ~ 4096 uS
+			ICR1 = pwmValues[ch];
+			pwmFrameSum += pwmValues[ch];
 			ch+=1;
 			break;
 		case 2:
@@ -175,7 +175,7 @@ ISR(TIMER1_OVF_vect ){ // May want to redo as if/else structure, more efficient?
 		default:
 			ch = 8;
 	}
-	LED_OR = LOW;
+	// LED_OR = LOW;
 }
 
 ISR(TIMER0_COMPA_vect){
@@ -260,8 +260,6 @@ void setup(void){
 	printf("Device ID Check: ");
 	if(deviceIdCheck()){
 		printf("OK\n");
-		// eltFullSequence();
-		// eltTransmit_Packet();										// ~100 ms
 	} else{
 		printf("FAILED!\n");
 		for(uint8_t i=0; i<10; i++){
@@ -292,153 +290,74 @@ void setup(void){
 	
 	// Development
 	
-	//rfmSetInterrupts(ENABLED,100);
-	EICRA = _BV(ISC01); // Falling-Edge
-	EIMSK = _BV(INT0);
+	// EICRA = _BV(ISC01); // Falling-Edge
+	// EIMSK = _BV(INT0);
 }
 
 void loop(void){
 	static uint8_t eltTransmitCount = 0;
-	static uint16_t failsafeCounter = 0;
+	// static uint16_t failsafeCounter = 0;
 	
-	static uint16_t manualFreq = 3000;
+	// static uint16_t manualFreq = 3000;
 	
 	static uint16_t secLoop;
 	
-	uint16_t rfmIntList = 0; // [0x03,0x04]
-	uint8_t rfmFIFO[64];
-	// Fix#define RFM_INT_VALID_PACKET_RX (1<<(1))
+	uint16_t rfmIntList = 0;
+	// uint8_t rfmFIFO[64];
 	#define RFM_INT_VALID_SYNC (1<<(7))
-	// Fix#define RFM_INT_RSSI_THRESH ((1<<(4))<<8)
-	// Fix#define DL_BIND_FLAG (1<<7)
 	
-	// Assert Concurrent Outputs (Outputs not tied to a FSM State, but merely from inputs)
-	// if(sys.statusLEDs) LED_OR = HIGH; //flashOrangeLED(2,5,5); // Solve Delay timing issue
 	
-	// if(RFM_INT) LED_OR = HIGH;
-	
-	// transferSPI(sys.state);
-	// _delay_us(1);
-	
-	if(sys.intSrc.wdt){ // Wow! Race Condition! Should only check this in a single function
-		//if(sys.statusLEDs) LED_OR = HIGH;
-		// updateVolts(FAST);
+	if(sys.intSrc.wdt){
 		sys.intSrc.wdt = 0;
 		_delay_ms(1);
-		// printf("State: %s\tLipoly: %u\tVoltIn: %u\tATmega: %u\tRSSI: %u\tErrors: %u\n",
-			// (sys.state == 0)? "DOWN" :(sys.state == 1)? "SLEEP" :(sys.state == 2)? "BEACON" :
-			// (sys.state == 3)? "ACTIVE" : "FAILSAFE",volt.lipoly,volt.sysVin,volt.atMega,noiseFloor, rfmWriteErrors);
-
 	}
 		
-	// Carry out the current State processes and determine next state
-	switch(sys.state){ // Native State Machine
-		case DOWN:	// This is the worst-case state, and must be power-optimized as much as possible.
-					// Getting to this point means the battery is at 70% or so. The ATmega must power-down hard
-					// and configure the RFM for Low-Duty-Cycle mode Receive. This mode needs to allow for several 
-					// weeks of standby monitoring time, months if possible. A valid interrogation jumps the 
-					// state machine to SLEEP to emit at least one ELT burst, regardless of battery condition.
-					// It would make sense to have the LDC Rx frequencies to be the regular LRS list, as the LRS
-					// Transmitter is already a stellar preformer in the roll of interrogator. The Rx freq should
-					// roll on the list, shifting to the next entry every minute / 10th wake or so. This will allow
-					// for noise and locked-out channels.
-					// As mentioned in SLEEP, is having the ATmega go totally down necessary? Also, is it 
-					// dangerous to have the entire system rest on the RFM if the ATmega disables its WDT and does
-					// hard sleep?
-					// If GPS information is flowing, parse it.
-				wdtIntConfig(DISABLED,0); //ENABLED,9); //
-			// Refresh information
+	switch(sys.state){
+		case DOWN:
+				wdtIntConfig(DISABLED,0);
+				noiseFloor = rfmGetRSSI();
 				updateVolts(SLOW);
-				//noiseFloor = rfmGetRSSI();
 				rfmIntList = rfmGetInterrupts();
-			// Determine nextState using refreshed information
-				if(rfmIntList&RFM_INT_VALID_SYNC){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
+				if(rfmIntList&RFM_INT_VALID_SYNC){
 					printf("Rx in DOWN Works!\t%u\t%X\n",noiseFloor,rfmIntList);
-					// rfmReadFIFO(rfmFIFO);
-					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = SLEEP;
-					sys.state = SLEEP;
-					// else sys.state = ACTIVE;
-				} //else sys.state = (sys.batteryState || sys.powerState)? SLEEP : DOWN;
-			// Continue if remaining in current state
+					sys.state = BEACON;
+				} else sys.state = (sys.batteryState || sys.powerState)? SLEEP : DOWN;
 				if(sys.state != DOWN){
 					printState();
 					break;
 				}
-			// Assert Outputs
 				rfmMode(RX_TONE_LDC);
 				rcOutputs(DISABLED);
-				sys.statusLEDs = ENABLED; //DISABLED;
+				sys.statusLEDs = ENABLED;
 				uartIntConfig(DISABLED);
-			// Configure for next loop and continue
-				//rfmSetInterrupts(DISABLED,100);
-				//EIMSK = (1<<INT0);
 				systemSleep(9);
 			break;
-		case SLEEP:	// Power-optimized 8-second beacon bursts, until the battery is at 70% or so.
-					// This and the DOWN state are exclusive to battery-only operation. If there is no good power
-					// from the 5v bus, SLEEP operates until the battery is consumed to the point we discontinue.
-					// If a valid packet/interrogation is received, the state machine jumps to BEACON for several cycles.
-					// A question to answer is whether the LDC mode on the RFM is worth using, or it having the ATmega wake 
-					// and configure the RFM to Rx manually is more power conservative. As it stands are present, the ATmega
-					// checks the RSSI at the end of the ELT burst, as the RFM is already active.
-					// If GPS information is flowing, parse it.
+		case SLEEP:
 				wdtIntConfig(ENABLED,9);
-			// Refresh information
 				updateVolts(SLOW);
 				eltFullSequence();
 				_delay_ms(2);
-				// noiseFloor = rfmGetRSSI();
 				rfmIntList = rfmGetInterrupts();
-			// Determine nextState using refreshed information
-				if(rfmIntList&RFM_INT_VALID_SYNC){ //rfmIntList&RFM_INT_RSSI_THRESH){ //&RFM_INT_VALID_PACKET_RX){
-					//printf("Rx in SLEEP Works!\t%u\t%X\n",noiseFloor,rfmIntList);
-					// rfmReadFIFO(rfmFIFO);
-					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
+				if(rfmIntList&RFM_INT_VALID_SYNC){
 					sys.state = BEACON;
-					// else sys.state = ACTIVE;
-					// sys.state = ACTIVE;
 				} else sys.state = (sys.batteryState || sys.powerState)? SLEEP : DOWN;
-				// } else sys.state = ((sys.powerState == 0))? ((sys.batteryState)? SLEEP : DOWN) : ACTIVE; //sticksCentered() && 
-
-			// Continue if remaining in current state
 				if(sys.state != SLEEP){
 					printState();
 					break;
 				}
-			// Assert Outputs
+				
 				rfmMode(RX_TONE_LDC);
 				rcOutputs(DISABLED);
-				sys.statusLEDs = ENABLED; //DISABLED;
+				sys.statusLEDs = ENABLED;
 				uartIntConfig(DISABLED);
-			// Configure for next loop and continue
-				//rfmSetInterrupts(DISABLED,100);
-				//EIMSK = (1<<INT0);
-				_delay_ms(30);
 				systemSleep(9);
 			break;
-		case BEACON:	// Stay here until the aircraft main battery is depleted. 
-						// As the KatanaLRS is a minor consumer even in Tx, no problem in continuous operation, 
-						// won't hasten the main battery demise too much.
-						// Makes sense that the ELT would be full-duty-cycle immediately after a crash.
-						// This is also visited when the module is interrogated by a valid packet/tone
-						// Hence, this state needs to play the same way as the SLEEP state to reduce battery power
-						// and to preserve stealth. No R/C Outputs or LEDs if visited from SLEEP.
-						// If GPS information is flowing, parse it.
+		case BEACON:
 				wdtIntConfig(ENABLED,8);
-				//rfmSetInterrupts(DISABLED,100);
-				//EIMSK = (1<<INT0);
-			// Refresh information
 				updateVolts(FAST);
 				eltFullSequence();
-				//rfmIntList = rfmGetInterrupts();
 				_delay_ms(2);
-			// Determine nextState using refreshed information
-				if(0){ //rfmIntList&RFM_INT_VALID_PACKET_RX){
-					// rfmReadFIFO(rfmFIFO);
-					// if(rfmFIFO[0]&(DL_BIND_FLAG)) sys.state = BEACON;
-					// else sys.state = ACTIVE;
-				} else sys.state = (eltTransmitCount > 10)? SLEEP : BEACON;
-			// Continue if remaining in current state
+				sys.state = (eltTransmitCount > 10)? SLEEP : BEACON;
 				if(sys.state != BEACON){
 					eltTransmitCount = 0;
 					printState();
@@ -446,188 +365,57 @@ void loop(void){
 					break;
 				}
 				eltTransmitCount += 1;
-			// Assert Outputs
-				rfmMode(TX_AFSK);
+				rfmMode(IDLE_TUNE);
 				rcOutputs((sys.powerState)? ENABLED : DISABLED);
-				sys.statusLEDs = ENABLED; //(sys.powerState)? ENABLED : DISABLED;
+				sys.statusLEDs = ENABLED;
 				uartIntConfig(DISABLED);
 				
-			// Configure for next loop and continue
 				_delay_ms(30);
 			break;
-		case ACTIVE:	// Includes the first state of Failsafe: poor/lossy or momentary lost link.
-						// Hopefully, this is the only mode ever really used. Optimized for R/C servo output.
-						// This mode would also parse the optional GPS input and interact with the Flight Controller.
-						// For normal discontinued operation (flight is over, main battery disconnected), this state
-						// has to determine that there is no emergency when link is lost. (May want to shift this to
-						// FAILSAFE.) The mission is over when sticks are centered and 5v input power is already gone.
-						// An emergency would occur if the aircraft either impacts terrain (lossing 5v power and 
-						// possibly antenna) or if link is lost (control inputs would probably no be centered, and 
-						// 5v should be good). Sticks Centered and 5v absent might still occur in a emergency, but 
-						// ultimately, the LRS never disengages from monitoring: DOWN is the "ground state".
+		case ACTIVE:
 				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
-			// Refresh information
-				//updateVolts(FAST);
-			// Determine nextState using refreshed information
-				//if(timer10ms > 600){ // 10 Misses in 20 hops (Fix this)
-					//timer10ms = 0;
-					//failsafeCounter = 0;
-					//updateVolts(FAST); // Very Dangerous. Perhaps just checking for the powerState component?
-					sys.state = ((sys.powerState == 0))? DOWN : FAILSAFE; //sticksCentered() && 
-					// sys.state = ((sys.powerState == 0))? SLEEP : ACTIVE; //sticksCentered() && 
-				//  } else sys.state = ACTIVE;
-			// Continue if remaining in current state
+				sys.state = ((sys.powerState == 0))? DOWN : SLEEP; //FAILSAFE; //sticksCentered() && 
 				if(sys.state != ACTIVE){
 					printState();
 					_delay_ms(30);
 					break;
 				}
-			// Assert Outputs
-				// rcOutputs(ENABLED);
-				// for(uint8_t i=0; i<CHANNELS; i++){
-					// pwmValues[i] = 1700<<1;
-				// }
-				sys.statusLEDs = ENABLED;
+
 				
-				
-				
-				
-				if(0){  // sys.intSrc.rfm || RFM_INT){
-					
-					// sys.intSrc.rfm = 0; Move to end to prevent double cycling
-					//rfmSetLrsChannel(dlFreqList[dlChannel]);
-					
-					uint8_t rssi = rfmReadReg(0x26);
-					int8_t afcMeasure = rfmReadReg(0x2B); // Is manualFreq>>2 Offset. This 4x + manualFreq is best center
-					uint8_t rfmIntReg1 = rfmReadReg(0x02);
-					uint8_t rfmIntReg2 = rfmReadReg(0x03);
-					uint8_t rfmIntReg3 = rfmReadReg(0x04);
-					uint8_t rfmModeReg = rfmReadReg(0x07);
-					uint8_t rfmHeader3 = rfmReadReg(0x47);
-					uint8_t rfmHeader2 = rfmReadReg(0x48);
-					uint8_t rfmHeader1 = rfmReadReg(0x49);
-					
-					
-					
-					CS_RFM = LOW;
-						transferSPI(0x7F);
-						for(uint8_t i=0; i<32; i++){
-							rfmFIFO[i] = transferSPI(0x00);
-						}
-					CS_RFM = HIGH;
-					/*
-					const uint8_t DL_BYTES = 10;
-					uint8_t dlReadArray[DL_BYTES];
-					
-					uint8_t k=0;
-					for(uint8_t j=0; j<(DL_BYTES-4); j++){
-						dlReadArray[k]   = ((rfmFIFO[j*5  ]&0xFC)>>2 | rfmFIFO[j*5+1]<<6);
-						dlReadArray[k+1] = ((rfmFIFO[j*5+1]&0xF0)>>4 | rfmFIFO[j*5+2]<<4);
-						dlReadArray[k+2] = ((rfmFIFO[j*5+2]&0xC0)>>6 | rfmFIFO[j*5+3]<<2);
-						dlReadArray[k+3] =  rfmFIFO[j*5+4];
-						k+=4;
-					}
-					
-					
-					// 5C,41,44,57,79,61,40,60,43,C6
-					printf("%X,",dlReadArray[0]);
-					for(uint8_t i=0; i<7; i++){
-						//pwmValues[i] = (( ((dlReadArray[0]>>i)&0x01)<<8 | dlReadArray[i+1] )<<1+1000)<<1;;
-						pwmValues[i] = (((uint16_t) dlReadArray[i+1]<<2) + 1000)<<1;
-						printf("%u,",pwmValues[i]>>1);
-					}
-					*/
-					
-					// for(uint8_t i=0; i<DL_BYTES; i++){
-						// printf("%X,",dlReadArray[i]);
-					// }
-					
-					
-					rfmWriteReg(0x08, (1<<1));
-					rfmWriteReg(0x08, 0);
-					rfmWriteReg(0x07, 0); //(1<<2)|(1<<1));
-					rfmWriteReg(0x08, (1<<2));
-					// rfmWriteReg(0x70, (1<<5)|(1<<4));
-					
-					printf("%u,%u,%d,%X,%X,%X,%X,%X,%X\t",dlChannel,rssi,afcMeasure,rfmIntReg1,rfmIntReg2,rfmIntReg3,rfmHeader3,rfmHeader2,rfmHeader1);
-					printf("\n");
-					
-					//printf("%u,%u,%d\n",dlChannel,rssi,afcMeasure);
-					
-					// rfmWriteReg(0x05,(1<<4));
-					//EIMSK = (1<<INT0);
-					
-					sys.intSrc.rfm = 0;
-				}
-				
-				if(timer1ms > timestamp+5000){ // Still have issues at 60 seconds intervals with this!!!!!! 
-					//LED_OR = HIGH;
+				if(timer1ms > timestamp+5000){
 					timestamp = timer1ms;
 					
-					//dlChannel = (dlChannel > 200)? 0 : dlChannel+1;
-					
-					dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0; 
-					//rfmSetLrsChannel(dlFreqList[dlChannel]);
-					
-					// manualFreq = (manualFreq >= 34600)? 3000 : manualFreq + 64;
-					// rfmWriteReg(0x76,manualFreq>>8);		// Freq Carrier 1	Upper Byte
-					// rfmWriteReg(0x77,manualFreq&0xFF);	// Freq Carrier 0	Lower Byte
-					
-					//printf("%u\n",manualFreq);
-				
-					// rfmWriteReg(0x08, (1<<1));
-					// rfmWriteReg(0x08, 0);
+					dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
 					
 					
-					printf("~%X,%X,%X\n",rfmReadReg(0x02),rfmReadReg(0x04),rfmReadReg(0x07));
+					// printf("~%X,%X,%X\n",rfmReadReg(0x02),rfmReadReg(0x04),rfmReadReg(0x07));
 				}
 				
 				if(((uint16_t)timer1ms) > secLoop+1000){
 					secLoop = ((uint16_t)timer1ms);
 					updateVolts(FAST);
 					rcOutputs(ENABLED);
-					//printf("~%X,%X,%X\n",rfmReadReg(0x02),rfmReadReg(0x07),rfmReadReg(0x62));
-					//rcOutputs(DISABLED);
-					//DDRB = 0b00101101;	
-					
+					sys.statusLEDs = ENABLED;
 				}
-	
-				//printState();
 				
-				// printf("Rx in DOWN Works!\t%u\t%X\n",noiseFloor,rfmIntList);
 				
-			// Configure for next loop and continue
-				// Insert Timer0 Coder here later
+				
+				
 			break;
-		case FAILSAFE:	// Entered if contact has been lost for long enough that servos must be driven to safe values.
-						// This must be the most stable state? Don't parse GPS?
-						// This state 
+		case FAILSAFE:
 				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
-			// Refresh information
-				// if(sys.intSrc.wdt){ // These should be a separate timer, no WDT
-					// failsafeCounter += 1;
-					// updateVolts(FAST);
-					// sys.intSrc.wdt = 0;
-				// }
-			// Determine nextState using refreshed information
 				if(timer1ms > 8000){
 					updateVolts(FAST);
 					sys.state = (sys.powerState)? BEACON : SLEEP;
 					timer1ms = 0;
 				}
-			// Continue if remaining in current state
 				if(sys.state != FAILSAFE){
 					printState();
 					break;
 				}
-			// Assert Outputs
 				rcOutputs(ENABLED);
 				sys.statusLEDs = ENABLED;
-				for(uint8_t i=0; i<CHANNELS; i++){
-					pwmValues[i] = 1000<<1;
-				}
-			// Configure for next loop and continue
-				
+				for(uint8_t i=0; i<CHANNELS; i++) pwmValues[i] = 1000<<1;
 			break;
 		default:
 			sys.state = FAILSAFE;
@@ -747,7 +535,7 @@ uint8_t systemSleep(uint8_t interval){
 	// PCMSK2 = (1<<PCINT16);
 	// PCICR = (1<<PCIE2);
 
-	// EICRA = 0;
+	EICRA = 0;
 	// EIMSK = (1<<INT1); //|(1<<INT0);
 	
 	
@@ -824,7 +612,7 @@ uint8_t atMegaInit(void){
     stdout = &uart_io; //= stdin 
 	
 	//SPI
-	SPCR	= (1<<SPE)|(1<<MSTR)|(1<<SPR0); // |(1<<CPOL)|(1<<CPHA)
+	SPCR	= (1<<SPE)|(1<<MSTR)|(1<<SPR1); // |(1<<CPOL)|(1<<CPHA) SPR0
 	
 	//I2C
 	TWCR = (1<<TWEN) | (1<<TWEA);
@@ -839,8 +627,8 @@ uint8_t atMegaInit(void){
 	//PCICR = 0; //(1<<PCIE2);
 	//PCMSK2 = 0; //(1<<PCINT16);
 	
-	EICRA = 0;
-	EIMSK = 0; //(1<<INT1)|(1<<INT0);
+	EICRA = _BV(ISC01);
+	EIMSK = (1<<INT0); //(1<<INT1)|(1<<INT0);
 	
 	sei();
 	

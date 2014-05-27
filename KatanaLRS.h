@@ -104,16 +104,16 @@ const uint8_t dlFreqList[] = { 24,142,169,133,32,96,58,125,87,77,141,177,55,42,1
 static volatile uint8_t dlChannel = 0;
 static volatile uint32_t timestamp = 0;
 
-static struct{
-	uint16_t ch1:10;
-	uint16_t ch2:10;
-	uint16_t ch3:10;
-	uint16_t ch4:10;
-	uint16_t ch5:10;
-	uint16_t ch6:10;
-	uint16_t ch7:10;
-	uint16_t ch8:10;
-} rcCommands;
+// static struct{
+	// uint16_t ch1:10;
+	// uint16_t ch2:10;
+	// uint16_t ch3:10;
+	// uint16_t ch4:10;
+	// uint16_t ch5:10;
+	// uint16_t ch6:10;
+	// uint16_t ch7:10;
+	// uint16_t ch8:10;
+// } rcCommands;
 
 static struct{
 	int32_t lat:30;		// 536870912 > 089999999

@@ -47,7 +47,8 @@ void systemIdle(void){
 
 void eltFullSequence(void){
 	rfmSetManualFreq(0x6400);
-	rfmMode(IDLE_TUNE);
+	// rfmMode(IDLE_TUNE);
+	for(uint8_t i=0; (i<20) && !rfmMode(IDLE_TUNE); i++) _delay_ms(1);
 	
 	eltTransmit_AFSK();
 	eltTransmit_Packet();
@@ -56,11 +57,12 @@ void eltFullSequence(void){
 }
 
 void eltTransmit_AFSK(void){
-	for(uint8_t i=0; (i<20) && rfmMode(TX_AFSK); i++){
+	for(uint8_t i=0; (i<20) && !rfmMode(TX_AFSK); i++){
 		_delay_ms(1);
-		if(i==20) printf("2B\n");
+		if(i==20) printf("A1\n");
 	}
-	rfmSetRxTx(RFM_txon);
+	rfmSetRxTxSw(RFM_txon);
+	rfmWriteReg(0x07, RFM_txon);
 	
 	SPCR = 0;
 	TCCR2A = _BV(COM2A0)|_BV(WGM21); //|_BV(WGM20); //WGM21 WGM20
@@ -90,51 +92,63 @@ void eltTransmit_AFSK(void){
 	TCCR2A = 0;
 	TCCR2B = 0;
 	TIMSK2 = 0;
-	SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR0);
+	SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR1);
 	
-	rfmMode(IDLE_TUNE);
+	// rfmMode(IDLE_TUNE);
+	for(uint8_t i=0; (i<20) && !rfmMode(IDLE_TUNE); i++) _delay_ms(1);
 }
 
 void eltTransmit_Packet(void){ //uint8_t *targetArray, uint8_t count){	
 	uint8_t index = 0;
 	
-	for(uint8_t i=0; (i<20) && rfmMode(TX_PACKET_4800); i++) _delay_ms(1);
+	for(uint8_t i=0; (i<20) && !rfmMode(TX_PACKET_4800); i++){
+		_delay_ms(1);
+		if(i==20) printf("P1\n");
+	}
 	
 	//		FCC ID, Lat, Long, UTC Fix, # Sat's, HDOP, Altitude, LiPoly, System In, AtMega
 	//		Slightly Reordered from $GPGGA. Want Lat/Long in front, incase of clock skew, battery lag
-	//snprintf(dataBufferA,BUFFER_SIZE,"UUUU\t"); //Preamble+Sync 0x55 x4 and 0x09
-	snprintf(dataBufferA,BUFFER_SIZE,"KE7ZLH,%+.9li,%+.9li,%.6lu,%u,%u,%+.4i,%u,%u,%u*\n", 
+	// snprintf(dataBufferA,BUFFER_SIZE,"UUUU\t"); //Preamble+Sync 0x55 x4 and 0x09, doesn't work as SPI spaces bytes
+	snprintf(dataBufferA,BUFFER_SIZE,"KE7ZLH,%+.9li,%+.9li,%.6lu,%u,%u,%+.4i,%u,%u,%u*\n", \
 		(int32_t)gps.lat,(int32_t)gps.lon,(uint32_t)gps.time,gps.sats,gps.hdop,gps.alt,volt.lipoly,volt.sysVin,volt.atMega);
 	
 	//printf("%s",dataBufferA);
 	
 	index = rfmWriteFIFOStr(dataBufferA);
-	// Redo!!!!!!!!!!!!!!!!!!!!!!!!!  rfmTxPacket();
-	rfmSetRxTx(RFM_txon);
+	rfmSetRxTxSw(RFM_txon);
+	rfmWriteReg(0x07, RFM_txon);
 	_delay_ms(1);
 	
-	for(uint8_t i=0; (i<200) && !rfmGetTxFIFOEmpty(); i++){
-		_delay_ms(1);
-		if(i==200) printf("1C\n");
+	if(index >= 64){ // Could be a while(). Also, need to optimize the 64 thing, and make parametric
+		for(uint8_t i=0; (i<200) && !rfmGetTxFIFOEmpty(); i++){
+			_delay_ms(1);
+			if(i==200) printf("P2\n");
+		}
+		
+		// printf("%u,%p,%u,%p",dataBufferA,dataBufferA,(dataBufferA+index),(dataBufferA+index));
+		
+		index = rfmWriteFIFOStr(dataBufferA+index);
 	}
 	
-	index = rfmWriteFIFOStr(dataBufferA+index);
-	
-	// Redo !!!!!!!!!!! for(uint8_t i=0; (i<200) && rfmTxPacket(); i++){
 	for(uint8_t i=0; (i<200) && rfmGetRxTx(RFM_txon); i++){
 		_delay_ms(1);
-		if(i==200) printf("3C\n");
+		if(i==200) printf("P3\n");
 	}
 	
-	rfmMode(IDLE_TUNE);
+	// rfmMode(IDLE_TUNE);
+	for(uint8_t i=0; (i<20) && !rfmMode(IDLE_TUNE); i++) _delay_ms(1);
 }
 
 void eltTransmit_Beacon(void){
-	for(uint8_t i=0; (i<20) && rfmMode(TX_AFSK); i++) _delay_ms(1);
+	for(uint8_t i=0; (i<20) && !rfmMode(TX_AFSK); i++){
+		_delay_ms(1);
+		if(i==20) printf("B1\n");
+	}
 	
 	for(uint8_t n=1; n<BEACON_NOTES; n++){ // n=0 for no AFSK, but as the AFSK packet is A4/A5 notes, it replaces A4 here
 		rfmSetTxPower(beaconNotes[n][2]);
-		rfmSetRxTx(RFM_txon);
+		rfmSetRxTxSw(RFM_txon);
+		rfmWriteReg(0x07, RFM_txon);
 		_delay_ms(1);
 		SPCR = 0;
 		CS_RFM = HIGH;
@@ -165,9 +179,11 @@ void eltTransmit_Beacon(void){
 		TCCR2A = 0;
 		TCCR2B = 0;
 		TIMSK2 = 0;
-		SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR0);
+		SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPR1);
 		_delay_ms(1);
 	}
 	
-	for(uint8_t i=0; (i<200) && rfmMode(IDLE_TUNE); i++) _delay_ms(1);
+	// for(uint8_t i=0; (i<200) && rfmMode(IDLE_TUNE); i++) _delay_ms(1);
+	// rfmMode(IDLE_TUNE);
+	for(uint8_t i=0; (i<20) && !rfmMode(IDLE_TUNE); i++) _delay_ms(1);
 }

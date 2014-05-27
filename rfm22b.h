@@ -659,7 +659,7 @@ const uint8_t rfmConfig_Core[][2] = { // Start the device inert but ready, inter
 	{RFM_GPIO_1,	RFM_p_TX_ST},	// GPIO1 			Tx
 	{0x0E,	0x00},					// I/O Ports		None
 	#endif
-	{RFM_GPIO_2,	RFM_p_RX_OUT},	// GPIO2 		RFM_p_PMBL RFM_p_RX_OUT RFM_p_WUT	Sync=11011 RxData=10100 Preamble=11001 RxFifoFull=10110 RxState=10101 WUT=00001
+	{RFM_GPIO_2,	RFM_p_WUT},	// GPIO2 		RFM_p_PMBL RFM_p_RX_OUT RFM_p_WUT	Sync=11011 RxData=10100 Preamble=11001 RxFifoFull=10110 RxState=10101 WUT=00001
 	{0x05,	0x00},			// Int Enable 1		
 	{0x06,	0x00},			// Int Enable 2		
 	{0x07,	0x00},			// Control 1		Standby
@@ -793,7 +793,7 @@ uint8_t rfmReset(void);
 uint8_t rfmMode(uint8_t);
 // uint8_t rfmTxPacket(void);
 // void rfmTxDirect(uint8_t);
-void rfmSetRxTx(uint8_t);
+void rfmSetRxTxSw(uint8_t);
 uint8_t rfmGetRxTx(uint8_t);
 void rfmSetInterrupts(uint8_t, uint8_t);
 uint16_t rfmGetInterrupts(void);
