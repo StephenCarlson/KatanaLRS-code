@@ -288,6 +288,17 @@ void setup(void){
 	printHelpInfo();
 	
 	
+	
+	
+	for(uint8_t i=0; i<20 && !rfmMode(TX_PACKET_4800); i++) _delay_ms(1);
+	for(uint8_t i=0; i<sizeof(rfmConfig_FhssConfig)/2;i++) \
+		rfmWriteReg(rfmConfig_FhssConfig[i][0],rfmConfig_FhssConfig[i][1]);
+	
+	rfmWriteReg(0x05, 0x02);	
+	rfmWriteReg(0x06, 0);	
+	
+	rfmSetManualFreq(0x6400);
+	
 	// Development
 	
 	// EICRA = _BV(ISC01); // Falling-Edge
@@ -305,6 +316,7 @@ void loop(void){
 	uint16_t rfmIntList = 0;
 	// uint8_t rfmFIFO[64];
 	#define RFM_INT_VALID_SYNC (1<<(7))
+	#define RFM_INT_PKT_RXED	(1<<(1))<<8
 	
 	
 	if(sys.intSrc.wdt){
@@ -374,18 +386,18 @@ void loop(void){
 			break;
 		case ACTIVE:
 				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
-				sys.state = ((sys.powerState == 0))? DOWN : SLEEP; //FAILSAFE; //sticksCentered() && 
-				if(sys.state != ACTIVE){
-					printState();
-					_delay_ms(30);
-					break;
-				}
+				//sys.state = ((sys.powerState == 0))? DOWN : SLEEP; //FAILSAFE; //sticksCentered() && 
+				//if(sys.state != ACTIVE){
+				//	printState();
+				//	_delay_ms(30);
+				//	break;
+				//}
 
 				
 				if(timer1ms > timestamp+5000){
 					timestamp = timer1ms;
 					
-					dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
+					//dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
 					
 					
 					// printf("~%X,%X,%X\n",rfmReadReg(0x02),rfmReadReg(0x04),rfmReadReg(0x07));
@@ -393,11 +405,23 @@ void loop(void){
 				
 				if(((uint16_t)timer1ms) > secLoop+1000){
 					secLoop = ((uint16_t)timer1ms);
-					updateVolts(FAST);
+					// updateVolts(FAST);
 					rcOutputs(ENABLED);
 					sys.statusLEDs = ENABLED;
 				}
 				
+				rfmIntList = rfmGetInterrupts();
+				if(rfmIntList&RFM_INT_PKT_RXED){
+					//rfmReadFIFO();
+					CS_RFM = LOW;
+						transferSPI(0x7F); //(RFM_READ<<7) | 
+						for(uint8_t i=0; i<20; i++){
+							printf("%X ",transferSPI(i)); //0x00);
+						}
+					CS_RFM = HIGH;
+					printf("\n");
+					rfmClearRxFIFO();
+				}
 				
 				
 				

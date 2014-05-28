@@ -742,31 +742,31 @@ const uint8_t rfmConfig_FhssConfig[][2] = {
 	// F2	Lower Byte of CRC-16 IBM/ARC
 	
 	// Packet and FIFO
-	// {0x30,0xC0},		// Data Ctrl		Packet Handler LSB First
-	{0x32,0x07},		// Header Ctrl 1	Rx'd Hdr is Byte 3,2
-	{0x33,0x38},		// Header Ctrl 2	Hdr Defined by 3E ; Sync 3,2,0	
-	{0x34,0x03},		// Preamble Length	3 nibbles
-	{0x35,0x18},		// Preamble Detect	3 nibbles
+	{0x30,0x88},		// Data Ctrl		Packet Handler LSB First
+	{0x32,0x00},		// Header Ctrl 1	Rx'd Hdr is Byte 3,2
+	{0x33,0x0A},		// Header Ctrl 2	Hdr Defined by 3E ; Sync 3,2,0	
+	{0x34,0x08},		// Preamble Length	3 nibbles
+	{0x35,0x28},		// Preamble Detect	3 nibbles
 	// {0x60,0x00},		// Preamble	Thresh						
-	{0x36,0x15},		// Sync Word 3		90, D0
-	{0x37,0x00},		// Sync Word 2		42, 50					
+	{0x36,0b11010010},	// Sync Word 3		90, D0
+	{0x37,0b11000110},	// Sync Word 2		42, 50					
 	{0x38,0x00},		// Sync Word 1		Always E1					
 	{0x39,0x00},		// Sync Word 0							
 	{0x3A,0x00},		// Tx Header 3							
 	{0x3B,0x00},		// Tx Header 2							
 	{0x3C,0x00},		// Tx Header 1							
 	{0x3D,0x00},		// Tx Header 0							
-	{0x3E,0x0D},		// Tx Pkt Length	13 Bytes per packet
-	{0x3F,0x34},		// Check Header 3						
-	{0x40,0x54},		// Check Header 2						
-	{0x41,0x78},		// Check Header 1						
+	{0x3E,0x14},		// Tx Pkt Length	13 Bytes per packet
+	{0x3F,0x00},		// Check Header 3						
+	{0x40,0x00},		// Check Header 2						
+	{0x41,0x00},		// Check Header 1						
 	{0x42,0x00},		// Check Header 0						
-	{0x43,0x0F},		// Header Enable 3	All bits compared	
-	{0x44,0xF3},		// Header Enable 2	All bits compared	
-	{0x45,0xFF},		// Header Enable 1	All bits compared	
+	{0x43,0x00},		// Header Enable 3	All bits compared	
+	{0x44,0x00},		// Header Enable 2	All bits compared	
+	{0x45,0x00},		// Header Enable 1	All bits compared	
 	{0x46,0x00},		// Header Enable 0	All bits compared	
-	{0x7C,0x3C},		// Tx FIFO Ctrl 1	Tx Almost Full @ 60	
-	{0x7D,0x04},		// Tx FIFO Ctrl 2	Tx Almost Empt @ 4	
+	{0x7C,4},		// T// Tx FIFO Ctrl 1	Tx Almost Full @ 60	
+	{0x7D,1},		// T// Tx FIFO Ctrl 2	Tx Almost Empt @ 4	
 	{0x7E,0x20},		// Rx FIFO Ctrl		Rx Almost Full @ 32	
 	
 };

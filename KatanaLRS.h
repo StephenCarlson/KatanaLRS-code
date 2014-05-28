@@ -3,8 +3,8 @@
 
 
 // Behavioral Switches
-#define RFM23BP
-// #define RFM22B
+// #define RFM23BP
+#define RFM22B
 
 
 
