@@ -288,20 +288,21 @@ void setup(void){
 	printHelpInfo();
 	
 	
-	
+	// for(uint8_t i=0; i<100 && !rfmMode(RX_FHSS_LRS); i++) _delay_us(100);
 	
 	for(uint8_t i=0; i<20 && !rfmMode(TX_PACKET_4800); i++) _delay_ms(1);
 	for(uint8_t i=0; i<sizeof(rfmConfig_FhssConfig)/2;i++) \
 		rfmWriteReg(rfmConfig_FhssConfig[i][0],rfmConfig_FhssConfig[i][1]);
 	
-	rfmWriteReg(0x05, 0x04);	
+	rfmWriteReg(0x05, 0x02);	
+	// rfmWriteReg(0x05, 0x04);	
 	rfmWriteReg(0x06, 0);	
 	
 	rfmSetManualFreq(0x6400);
 	
-	for(uint8_t i=0; i<64; i++){
-		dataBufferA[i] = (i&0x01)? 0x00:0xFF;
-	}
+	// for(uint8_t i=0; i<64; i++){
+		// dataBufferA[i] = (i&0x01)? 0x00:0xFF;
+	// }
 	
 	// Development
 	
@@ -409,13 +410,17 @@ void loop(void){
 					
 					// printf("~%X,%X,%X\n",rfmReadReg(0x02),rfmReadReg(0x04),rfmReadReg(0x07));
 				// }
-				
+
 				uint32_t currentTime = timer1ms; // Avoid Race Condition?
 				if(currentTime > secLoop){
-					secLoop = currentTime+1000;
+					secLoop = currentTime+4200;
 					// updateVolts(FAST);
 					rcOutputs(ENABLED);
 					sys.statusLEDs = ENABLED;
+					rfmSetRxTxSw(RFM_rxon);
+					rfmWriteReg(0x07, RFM_rxon | 0x02);
+				}
+					/*
 					// rfmReset();
 					rfmMode(IDLE_READY);
 					rfmClearTxFIFO();
@@ -440,20 +445,44 @@ void loop(void){
 					// rfmMode(IDLE_STANDBY);
 					// rfmIntList = rfmGetInterrupts();
 					// printf("%X\t%X\n",rfmIntList,RFM_INT);
-				}
+				} */
 				
-				// rfmIntList = rfmGetInterrupts();
 				// if(rfmIntList&RFM_INT_PKT_RXED){
-					//rfmReadFIFO();
-					// CS_RFM = LOW;
-						// transferSPI(0x7F); //(RFM_READ<<7) | 
-						// for(uint8_t i=0; i<20; i++){
-							// printf("%X ",transferSPI(i)); //0x00);
-						// }
-					// CS_RFM = HIGH;
-					// printf("\n");
-					// rfmClearRxFIFO();
-				// }
+				if(RFM_INT){
+					// Receive
+					rfmIntList = rfmGetInterrupts();
+					uint8_t payloadSize = rfmReadReg(0x4B);
+					rfmReadFIFOn(dataBufferA,payloadSize);
+					rfmSetRxTxSw(0);
+					rfmSetTxPower(0);
+					for(uint8_t i=0; i<payloadSize; i++){
+						printf("%X ",dataBufferA[i]); //0x00);
+					}
+					printf("\n");
+					rfmClearRxFIFO();
+					
+					// ReTransmit
+					rfmClearTxFIFO();
+					rfmWriteReg(0x05, 0x04);
+					rfmWriteFIFOArray(dataBufferA,payloadSize);
+					rfmWriteReg(0x3E,payloadSize);
+					rfmSetRxTxSw(RFM_txon);
+					rfmWriteReg(0x07, RFM_txon | 0x02);
+					for(uint8_t i=0; (i<200) && !RFM_INT; i++){ // Counting on FHSS Config to set Reg 0x05 to 0x02
+						// rfmGetInterrupts();
+						// rfmGetRxTx(RFM_txon);
+						_delay_ms(1);
+						if(i==199) printf("P3\n");
+					}
+					rfmSetRxTxSw(0);
+					rfmWriteReg(0x07, 0x02);
+					rfmGetInterrupts();
+					
+					// Clean Up
+					rfmWriteReg(0x05, 0x02);	
+					rfmSetRxTxSw(RFM_rxon);
+					rfmWriteReg(0x07, RFM_rxon | 0x02);
+				}
 				
 				
 				

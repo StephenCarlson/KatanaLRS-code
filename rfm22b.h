@@ -805,6 +805,7 @@ uint8_t rfmGetRSSI(void);
 uint8_t rfmReadReg(uint8_t);
 uint8_t rfmWriteReg(uint8_t, uint8_t);
 void rfmReadFIFO(uint8_t *);
+void rfmReadFIFOn(uint8_t *, uint8_t);
 uint8_t rfmWriteFIFOArray(uint8_t *, uint8_t);
 uint8_t rfmWriteFIFOStr(char *);
 uint8_t rfmGetTxFIFOEmpty(void);

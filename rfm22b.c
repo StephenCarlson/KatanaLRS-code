@@ -330,6 +330,17 @@ void rfmReadFIFO(uint8_t *array){
 	_delay_us(1);
 }
 
+void rfmReadFIFOn(uint8_t *array, uint8_t n){
+	n = (n>64)? 64:n;
+	CS_RFM = LOW;
+		transferSPI(0x7F); //(RFM_READ<<7) | 
+		for(uint8_t i=0; i<n; i++){
+			array[i] = transferSPI(i); //0x00);
+		}
+	CS_RFM = HIGH;
+	_delay_us(1);
+}
+
 uint8_t rfmWriteFIFOArray(uint8_t *array, uint8_t n){
 	uint8_t count = 0;
 	n = (n>64)? 64:n;
