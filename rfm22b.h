@@ -718,7 +718,7 @@ const uint8_t rfmConfig_ModeConfigs[][4] = {
 	{0x77,0x80,0x00,0x00},      // Freq Carrier 0			
 	
 	// {0x08,0x00,0x00,0x00},	// Low-Duty-Cycle			LDC Off		LDC Off		LDC On for 3500
-	{0x30,0xC0,0x80,0x00},		// Packet Handler			PH, LSB		PH			None
+	// {0x30,0xC0,0x80,0x00},		// Packet Handler			PH, LSB		PH			None
 };
 const uint8_t rfmConfig_FhssConfig[][2] = {
 	// Freq Range between 430.5 and 434.950 MHz, Center is 432.725
@@ -744,12 +744,13 @@ const uint8_t rfmConfig_FhssConfig[][2] = {
 	// Packet and FIFO
 	{0x30,0x88},		// Data Ctrl		Packet Handler LSB First
 	{0x32,0x00},		// Header Ctrl 1	Rx'd Hdr is Byte 3,2
-	{0x33,0x0A},		// Header Ctrl 2	Hdr Defined by 3E ; Sync 3,2,0	
+	// {0x33,0x0A},		// Header Ctrl 2	Hdr Defined by 3E ; Sync 3,2,0	
+	{0x33,0x02},		// Header Ctrl 2	Hdr Defined by 3E ; Sync 3,2,0	
 	{0x34,0x08},		// Preamble Length	3 nibbles
 	{0x35,0x28},		// Preamble Detect	3 nibbles
 	// {0x60,0x00},		// Preamble	Thresh						
 	{0x36,0b11010010},	// Sync Word 3		90, D0
-	{0x37,0b11000110},	// Sync Word 2		42, 50					
+	{0x37,0b11001010},	// Sync Word 2		42, 50					
 	{0x38,0x00},		// Sync Word 1		Always E1					
 	{0x39,0x00},		// Sync Word 0							
 	{0x3A,0x00},		// Tx Header 3							
@@ -803,11 +804,13 @@ void rfmSetTxPower(uint8_t);
 uint8_t rfmGetRSSI(void);
 uint8_t rfmReadReg(uint8_t);
 uint8_t rfmWriteReg(uint8_t, uint8_t);
-void rfmReadFIFO(uint8_t *array);
-uint8_t rfmWriteFIFOStr(char *array);
+void rfmReadFIFO(uint8_t *);
+uint8_t rfmWriteFIFOArray(uint8_t *, uint8_t);
+uint8_t rfmWriteFIFOStr(char *);
 uint8_t rfmGetTxFIFOEmpty(void);
 void rfmClearTxFIFO(void);
 void rfmClearRxFIFO(void);
+// uint8_t rfmTxPacket(uint8_t *, uint8_t);
 
 
 

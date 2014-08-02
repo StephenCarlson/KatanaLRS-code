@@ -20,10 +20,10 @@
 
 uint8_t rfmReset(void){
 	uint8_t failed = 0;
-	for(uint8_t i=0; i<5; i++){
+	// for(uint8_t i=0; i<5; i++){
 		rfmWriteReg(0x07, 0x80);		// Reset the Chip
-		_delay_us(200);
-	}
+	//	_delay_us(200);
+	// }
 	for(uint8_t i=0; i<200; i++){
 		if((rfmReadReg(0x04)&0x02) == 0x02) break;
 		if(i==200) failed = 1;
@@ -291,16 +291,17 @@ uint8_t rfmReadReg(uint8_t regAddress){
 }
 
 uint8_t rfmWriteReg(uint8_t regAddress, uint8_t regValue){
+	uint8_t readBack = rfmReadReg(regAddress);
 	CS_RFM = LOW;
 		transferSPI(RFM_WRITE | regAddress);
 		_delay_us(1);
 		transferSPI(regValue);
 	CS_RFM = HIGH;
 	_delay_us(2);
-	uint8_t readBack = rfmReadReg(regAddress)^(regValue);
+	readBack = rfmReadReg(regAddress)^(regValue);
 	if(readBack) LED_OR = HIGH;
 	rfmWriteErrors += (readBack)? 1 : 0;
-	for(uint8_t i=0; (i<10) && (readBack); i++){
+	// for(uint8_t i=0; (i<10) && (readBack); i++){
 	//if(readBack){
 		/*
 		CS_RFM = LOW;
@@ -310,12 +311,12 @@ uint8_t rfmWriteReg(uint8_t regAddress, uint8_t regValue){
 		CS_RFM = HIGH;
 		_delay_us(50);
 		*/
-		readBack = rfmReadReg(regAddress)^(regValue);
+		// readBack = rfmReadReg(regAddress)^(regValue);
 		
 		// LED_OR = HIGH;
-		_delay_us(50);
-	}
-		LED_OR = LOW;
+		// _delay_us(50);
+	// }
+	LED_OR = LOW;
 	return readBack; //(readBack)? readBack : 0; Seems I check for not working more than working.
 }
 
@@ -329,6 +330,20 @@ void rfmReadFIFO(uint8_t *array){
 	_delay_us(1);
 }
 
+uint8_t rfmWriteFIFOArray(uint8_t *array, uint8_t n){
+	uint8_t count = 0;
+	n = (n>64)? 64:n;
+	CS_RFM = LOW;
+		transferSPI(0xFF);
+		for(uint8_t i=0; i<n; i++){
+			transferSPI(array[i]);
+			count++;
+		}
+	CS_RFM = HIGH;
+	_delay_us(1);
+	return count;
+}
+
 uint8_t rfmWriteFIFOStr(char *array){ //, uint8_t index){
 	uint8_t count = 0;
 	// index = (index>64)? 64 : index;
@@ -336,7 +351,7 @@ uint8_t rfmWriteFIFOStr(char *array){ //, uint8_t index){
 		transferSPI(0xFF);
 		// for(uint8_t i=index; i<(64-index); i++){
 		for(uint8_t i=0; i<64; i++){
-			if(array[i] == '\0') break;
+			if(array[i] == '\0') break; // Bad idea if the string carries non-ASCII data
 			transferSPI(array[i]);
 			count++;
 		}
@@ -345,7 +360,7 @@ uint8_t rfmWriteFIFOStr(char *array){ //, uint8_t index){
 	return(count);
 }
 
-uint8_t rfmGetTxFIFOEmpty(void){
+uint8_t rfmGetTxFIFOEmpty(void){ // Totally Irrelevant, can do a macro instead
 	return rfmReadReg(0x03)&0x20;
 }
 
@@ -359,4 +374,17 @@ void rfmClearRxFIFO(void){
 	rfmWriteReg(0x08, (1<<1));
 	rfmWriteReg(0x08, 0);	
 }
+
+// uint8_t rfmTxPacket(uint8_t *array, uint8_t n){
+	// uint8_t count = rfmWriteFIFOArray(array,n);
+	// return count;
+// }
+
+
+
+
+
+
+
+
 

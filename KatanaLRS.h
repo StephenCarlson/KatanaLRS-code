@@ -3,8 +3,8 @@
 
 
 // Behavioral Switches
-// #define RFM23BP
-#define RFM22B
+#define RFM23BP
+// #define RFM22B
 
 
 
@@ -69,8 +69,9 @@ typedef struct{
 #define PWM_6		REGISTER_BIT(PORTD,5)
 #define PWM_7		REGISTER_BIT(PORTD,6)
 #define PWM_8		REGISTER_BIT(PORTD,7)
+#define RFM_PMBL	REGISTER_BIT(PORTD,3)
 #define RFM_INT		(!(PIND &(1<<2)))
-#define RFM_PMBL	(PIND &(1<<3))
+//#define RFM_PMBL	(PIND &(1<<3))
 #define ADC_VBAT	6 // For ADC Read Channel Selection
 #define ADC_VIN		7
 #define ADC_VSYS	14

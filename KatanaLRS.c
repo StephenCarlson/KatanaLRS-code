@@ -243,7 +243,7 @@ void setup(void){
 	rfmMode(IDLE_STANDBY);
 	
 	// Tasks and Routines
-	printf("\n\nKatanaLRS v1\nBy Steve Carlson %s\n\n",__DATE__);
+	printf("\n\nKatanaLRS v1\nBy Steve Carlson %s %s\n\n",__TIME__,__DATE__);
 	printf("Reset Source: "); //%X\n",startStatus); //%X\n", startStatus);
 	if(startStatus&WDRF) printf("WatchDog\t"); // From iom328p.h in AVR Include Folder
 	if(startStatus&BORF) printf("BrownOut\t");
@@ -294,10 +294,14 @@ void setup(void){
 	for(uint8_t i=0; i<sizeof(rfmConfig_FhssConfig)/2;i++) \
 		rfmWriteReg(rfmConfig_FhssConfig[i][0],rfmConfig_FhssConfig[i][1]);
 	
-	rfmWriteReg(0x05, 0x02);	
+	rfmWriteReg(0x05, 0x04);	
 	rfmWriteReg(0x06, 0);	
 	
 	rfmSetManualFreq(0x6400);
+	
+	for(uint8_t i=0; i<64; i++){
+		dataBufferA[i] = (i&0x01)? 0x00:0xFF;
+	}
 	
 	// Development
 	
@@ -311,7 +315,7 @@ void loop(void){
 	
 	// static uint16_t manualFreq = 3000;
 	
-	static uint16_t secLoop;
+	static uint32_t secLoop;
 	
 	uint16_t rfmIntList = 0;
 	// uint8_t rfmFIFO[64];
@@ -325,6 +329,7 @@ void loop(void){
 	}
 		
 	switch(sys.state){
+	/*
 		case DOWN:
 				wdtIntConfig(DISABLED,0);
 				noiseFloor = rfmGetRSSI();
@@ -384,6 +389,8 @@ void loop(void){
 				
 				_delay_ms(30);
 			break;
+			
+			*/
 		case ACTIVE:
 				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
 				//sys.state = ((sys.powerState == 0))? DOWN : SLEEP; //FAILSAFE; //sticksCentered() && 
@@ -394,34 +401,59 @@ void loop(void){
 				//}
 
 				
-				if(timer1ms > timestamp+5000){
-					timestamp = timer1ms;
+				// if(timer1ms > timestamp+5000){
+					// timestamp = timer1ms;
 					
 					//dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
 					
 					
 					// printf("~%X,%X,%X\n",rfmReadReg(0x02),rfmReadReg(0x04),rfmReadReg(0x07));
-				}
+				// }
 				
-				if(((uint16_t)timer1ms) > secLoop+1000){
-					secLoop = ((uint16_t)timer1ms);
+				uint32_t currentTime = timer1ms; // Avoid Race Condition?
+				if(currentTime > secLoop){
+					secLoop = currentTime+1000;
 					// updateVolts(FAST);
 					rcOutputs(ENABLED);
 					sys.statusLEDs = ENABLED;
+					// rfmReset();
+					rfmMode(IDLE_READY);
+					rfmClearTxFIFO();
+					rfmWriteReg(0x05, 0x04);	
+					rfmWriteReg(0x06, 0);	
+					rfmWriteFIFOArray(dataBufferA,60);
+					rfmWriteReg(0x3E,30);
+					rfmSetTxPower(0);
+					// rfmGetInterrupts();
+					rfmSetRxTxSw(RFM_txon);
+					rfmWriteReg(0x07, RFM_txon);
+					// _delay_us(100);
+					// rfmWriteReg(0x05, 0x04);
+					for(uint8_t i=0; (i<200) && !RFM_INT; i++){ // Counting on FHSS Config to set Reg 0x05 to 0x02
+						// rfmGetInterrupts();
+						// rfmGetRxTx(RFM_txon);
+						_delay_ms(1);
+						if(i==199) printf("P3\n");
+					}
+					rfmSetRxTxSw(0);
+					rfmGetInterrupts();
+					// rfmMode(IDLE_STANDBY);
+					// rfmIntList = rfmGetInterrupts();
+					// printf("%X\t%X\n",rfmIntList,RFM_INT);
 				}
 				
-				rfmIntList = rfmGetInterrupts();
-				if(rfmIntList&RFM_INT_PKT_RXED){
+				// rfmIntList = rfmGetInterrupts();
+				// if(rfmIntList&RFM_INT_PKT_RXED){
 					//rfmReadFIFO();
-					CS_RFM = LOW;
-						transferSPI(0x7F); //(RFM_READ<<7) | 
-						for(uint8_t i=0; i<20; i++){
-							printf("%X ",transferSPI(i)); //0x00);
-						}
-					CS_RFM = HIGH;
-					printf("\n");
-					rfmClearRxFIFO();
-				}
+					// CS_RFM = LOW;
+						// transferSPI(0x7F); //(RFM_READ<<7) | 
+						// for(uint8_t i=0; i<20; i++){
+							// printf("%X ",transferSPI(i)); //0x00);
+						// }
+					// CS_RFM = HIGH;
+					// printf("\n");
+					// rfmClearRxFIFO();
+				// }
 				
 				
 				
@@ -442,7 +474,7 @@ void loop(void){
 				for(uint8_t i=0; i<CHANNELS; i++) pwmValues[i] = 1000<<1;
 			break;
 		default:
-			sys.state = FAILSAFE;
+			sys.state = ACTIVE;
 			// Refresh information
 			// Determine nextState using refreshed information
 			// Continue if remaining in current state
@@ -505,19 +537,21 @@ void wdtIntConfig(uint8_t mode, uint8_t interval){
 void printRegisters(void){
 	
 	
-	printf("\n\t");
-	for(uint8_t c=0; c<16; c++)	printf("%X\t",c);
+	//printf("\n\t");
+	// for(uint8_t c=0; c<16; c++)	printf("%X\t",c);
 	printf("\n");
 	for(uint8_t j=0; j<8; j++){
-		printf("%X\t",j);
+		// printf("%X\t",j);
 		CS_RFM = LOW;
 			transferSPI(16*j);
 			for(uint8_t k=0; k<16; k++){
 				uint8_t response = transferSPI(0x00);
-				printf("%X\t",response);
+				// printf("%X\t",response);
+				printf("%X\n",response);
 			}
 		CS_RFM = HIGH;
-		printf("\n");
+		_delay_us(100);
+		// printf("\n");
 	}
 	//printf("\n");
 	
@@ -621,7 +655,7 @@ uint8_t atMegaInit(void){
 	PORTD |=0b11110010;	//	P8		P7		P6		P5		RFM_PBL	RF_INT	TXD		RXD
 	DDRB |= 0b00101111;	
     DDRC |= 0b00001111;	
-    DDRD |= 0b11110010;	
+    DDRD |= 0b11111010;	
 	// <steve> TODO! Add a statement here that disables the output ports for the servos
 	// when the RC Outputs are suppose to be disabled. Likely, the RC Outputs state will be a flag
 	// in the global config struct.
@@ -637,6 +671,7 @@ uint8_t atMegaInit(void){
 	
 	//SPI
 	SPCR	= (1<<SPE)|(1<<MSTR)|(1<<SPR1); // |(1<<CPOL)|(1<<CPHA) SPR0
+	// SPCR	= (1<<SPE)|(1<<MSTR)|(1<<SPR0); // |(1<<CPOL)|(1<<CPHA) SPR0
 	
 	//I2C
 	TWCR = (1<<TWEN) | (1<<TWEA);
