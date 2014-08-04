@@ -264,8 +264,10 @@ void setup(void){
 		printf("FAILED!\n");
 		for(uint8_t i=0; i<10; i++){
 			flashOrangeLED(5,10,40);
+			rfmReset();
+			rfmMode(IDLE_STANDBY);
 			if(deviceIdCheck()) break;
-			if(i >= 9) sys.state = FAILSAFE; 
+			// if(i >= 9) sys.state = FAILSAFE; 
 		}
 	}	
 	
@@ -288,17 +290,20 @@ void setup(void){
 	printHelpInfo();
 	
 	
-	// for(uint8_t i=0; i<100 && !rfmMode(RX_FHSS_LRS); i++) _delay_us(100);
+	for(uint8_t i=0; i<100 && !rfmMode(RX_FHSS_LRS); i++) _delay_us(100);
 	
-	for(uint8_t i=0; i<20 && !rfmMode(TX_PACKET_4800); i++) _delay_ms(1);
-	for(uint8_t i=0; i<sizeof(rfmConfig_FhssConfig)/2;i++) \
-		rfmWriteReg(rfmConfig_FhssConfig[i][0],rfmConfig_FhssConfig[i][1]);
+	// for(uint8_t i=0; i<20 && !rfmMode(TX_PACKET_4800); i++) _delay_ms(1);
+	// for(uint8_t i=0; i<sizeof(rfmConfig_FhssConfig)/2;i++) \
+		// rfmWriteReg(rfmConfig_FhssConfig[i][0],rfmConfig_FhssConfig[i][1]);
 	
 	rfmWriteReg(0x05, 0x02);	
 	// rfmWriteReg(0x05, 0x04);	
 	rfmWriteReg(0x06, 0);	
 	
-	rfmSetManualFreq(0x6400);
+	dlChannel = 5;
+	rfmSetLrsChannel(dlFreqList[dlChannel]);
+	
+	// rfmSetManualFreq(0x6400);
 	
 	// for(uint8_t i=0; i<64; i++){
 		// dataBufferA[i] = (i&0x01)? 0x00:0xFF;
@@ -314,9 +319,11 @@ void loop(void){
 	static uint8_t eltTransmitCount = 0;
 	// static uint16_t failsafeCounter = 0;
 	
-	// static uint16_t manualFreq = 3000;
+	static uint16_t manualFreq = 3200;
 	
-	static uint32_t secLoop;
+	static uint32_t time1sec;
+	static uint32_t time5sec;
+	static int16_t freqOffset = 0;
 	
 	uint16_t rfmIntList = 0;
 	// uint8_t rfmFIFO[64];
@@ -400,25 +407,82 @@ void loop(void){
 				//	_delay_ms(30);
 				//	break;
 				//}
-
-				
-				// if(timer1ms > timestamp+5000){
-					// timestamp = timer1ms;
-					
-					//dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
-					
-					
-					// printf("~%X,%X,%X\n",rfmReadReg(0x02),rfmReadReg(0x04),rfmReadReg(0x07));
-				// }
-
+				cli();
 				uint32_t currentTime = timer1ms; // Avoid Race Condition?
-				if(currentTime > secLoop){
-					secLoop = currentTime+4200;
+				sei();
+				if(currentTime > time5sec){
+					time5sec = currentTime + 5000;
+					
+					// dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
+					// rfmSetLrsChannel(dlFreqList[dlChannel]);
+					
+					// printf("DL %d\n",dlChannel);
+					// printf("~%X,%X,%X\n",rfmReadReg(0x02),rfmReadReg(0x04),rfmReadReg(0x07));
+				}
+				
+				if(currentTime > time1sec){
+					// time1sec = currentTime+4200;
+					time1sec = currentTime+2700;
 					// updateVolts(FAST);
 					rcOutputs(ENABLED);
 					sys.statusLEDs = ENABLED;
+					
+					
+					if(rfmReadReg(0x2D) != 0x00){
+						printf("RFM Bricked, Resetting!\n");
+						
+						rfmReset();
+						for(uint8_t i=0; (i<200) && !rfmMode(IDLE_STANDBY); i++) _delay_us(100);
+						for(uint8_t i=0; (i<100) && !rfmMode(RX_FHSS_LRS); i++) _delay_us(100);
+						rfmWriteReg(0x05, 0x02);	
+						rfmWriteReg(0x06, 0);
+						rfmSetLrsChannel(dlFreqList[dlChannel]);
+					}
+					
+					
+					rfmWriteReg(0x71,0x30);
+					rfmSetTxPower(0);
+					_delay_us(200);
+					rfmSetRxTxSw(RFM_txon);
+					rfmWriteReg(0x07, RFM_txon | 0x02);
+					_delay_ms(200);
+					rfmWriteReg(0x07, 0x02);
+					for(uint8_t i=0; (i<200) && !((rfmReadReg(0x62)>>5)^0x03); i++){
+						rfmWriteReg(0x07, 0x02);
+						if(i==199) printf("Fail to stop Tx\n");
+						_delay_ms(1);
+					}
+					rfmSetRxTxSw(0);
+					//rfmWriteReg(0x71,0x23);
+					//_delay_us(200);
+					
+					
+					freqOffset = (freqOffset >= 320)? -320 : freqOffset+4;
+					rfmWriteReg(0x73, freqOffset);
+					rfmWriteReg(0x74, freqOffset>>8);
+					printf("FO %d\n",freqOffset);
+					
+					/*
 					rfmSetRxTxSw(RFM_rxon);
 					rfmWriteReg(0x07, RFM_rxon | 0x02);
+					// freqOffset = (freqOffset >= 320)? -320 : freqOffset+5;
+					freqOffset = (freqOffset >= 320)? -320 : freqOffset+4;
+					rfmWriteReg(0x73, freqOffset);
+					rfmWriteReg(0x74, freqOffset>>8);
+					printf("FO %d\n",freqOffset);
+					// dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
+					// manualFreq = (manualFreq>=40000)? 3200 : manualFreq+32 ;
+					// rfmSetManualFreq(manualFreq);
+					// double carrierFreq = (43.0F+((float)(manualFreq)/64000.0F))*1000.0F;
+					// uint32_t carrierFreq = 430000+((manualFreq*10)/64);
+					// printf("Freq: %lu MHz\n",carrierFreq);
+					// printf("F\t%u\n",manualFreq);
+					
+
+					*/
+					
+
+					
 				}
 					/*
 					// rfmReset();
@@ -448,19 +512,26 @@ void loop(void){
 				} */
 				
 				// if(rfmIntList&RFM_INT_PKT_RXED){
-				if(RFM_INT){
+				if(0){ //RFM_INT){
 					// Receive
 					rfmIntList = rfmGetInterrupts();
+					// dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
+					// rfmSetLrsChannel(dlFreqList[dlChannel]);
 					uint8_t payloadSize = rfmReadReg(0x4B);
-					rfmReadFIFOn(dataBufferA,payloadSize);
-					rfmSetRxTxSw(0);
-					rfmSetTxPower(0);
-					for(uint8_t i=0; i<payloadSize; i++){
-						printf("%X ",dataBufferA[i]); //0x00);
-					}
-					printf("\n");
+					rfmReadFIFOn(dataBufferA,20);
+					// rfmSetRxTxSw(0);
+					// rfmSetTxPower(0);
+					// int16_t afcValue = (int16_t)( (((int16_t)(rfmReadReg(0x2B)))<<2)|(rfmReadReg(0x2C)>>6) ); //(int16_t)( (((int16_t)rfmReadReg(0x2B))<<2) | (rfmReadReg(0x2C)&0xC0) );
+					// int16_t afcValue = (int16_t)( ((int16_t)((((uint16_t)rfmReadReg(0x2B))<<8))>>6)|(rfmReadReg(0x2C)>>6) ); // What an complete mess! Just to tack two fields together!
+					int16_t afcValue = (((int16_t)((int8_t)rfmReadReg(0x2B)))<<2) | (rfmReadReg(0x2C)>>6);
+					// printf("DL %d\tAFC %d\nD ",dlChannel,afcValue);
+					// for(uint8_t i=0; i<20; i++){
+						// printf("%X ",dataBufferA[i]); //0x00);
+					// }
+					// printf("\n");
 					rfmClearRxFIFO();
 					
+					/*
 					// ReTransmit
 					rfmClearTxFIFO();
 					rfmWriteReg(0x05, 0x04);
@@ -477,11 +548,14 @@ void loop(void){
 					rfmSetRxTxSw(0);
 					rfmWriteReg(0x07, 0x02);
 					rfmGetInterrupts();
+					*/
 					
 					// Clean Up
 					rfmWriteReg(0x05, 0x02);	
 					rfmSetRxTxSw(RFM_rxon);
 					rfmWriteReg(0x07, RFM_rxon | 0x02);
+					
+					printf("CH %u\t%d\n",(dlChannel),afcValue);
 				}
 				
 				

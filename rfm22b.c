@@ -26,7 +26,7 @@ uint8_t rfmReset(void){
 	// }
 	for(uint8_t i=0; i<200; i++){
 		if((rfmReadReg(0x04)&0x02) == 0x02) break;
-		if(i==200) failed = 1;
+		if(i==199) failed = 1;
 		_delay_ms(1);
 	}
 	return failed;
@@ -230,7 +230,7 @@ void rfmSetLrsChannel(uint8_t channel){
 	// #define DL_STEP(ch)	(uint16_t)(((uint32_t)(ch*1728)) / 10) + ((((uint32_t)(ch*1728)) % 10) > 4)? 1:0  // Broken-ish
 	// #define DL_STEP(ch)	(uint16_t)(((uint32_t)(ch*1728) + 5) / 10) // Way better, half the size in compiled assembly
 	// uint16_t value = DL_OFFSET + DL_STEP(channel);
-	uint16_t value = 3200 + (uint16_t)(((uint32_t)(ch*1728) + 5) / 10); // 3144
+	uint16_t value = 3200 + (uint16_t)((((uint32_t)channel*1728) + 5) / 10); // 3144
 	
 	rfmWriteReg(0x76,value>>8);	// Freq Carrier 1	Upper Byte
 	rfmWriteReg(0x77,value&0xFF);	// Freq Carrier 0	Lower Byte

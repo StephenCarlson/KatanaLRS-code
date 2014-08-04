@@ -659,7 +659,7 @@ const uint8_t rfmConfig_Core[][2] = { // Start the device inert but ready, inter
 	{RFM_GPIO_1,	RFM_p_TX_ST},	// GPIO1 			Tx
 	{0x0E,	0x00},					// I/O Ports		None
 	#endif
-	{RFM_GPIO_2,	RFM_p_WUT},	// GPIO2 		RFM_p_PMBL RFM_p_RX_OUT RFM_p_WUT	Sync=11011 RxData=10100 Preamble=11001 RxFifoFull=10110 RxState=10101 WUT=00001
+	{RFM_GPIO_2,	RFM_p_PMBL},	// GPIO2 		RFM_p_PMBL RFM_p_RX_OUT RFM_p_WUT	Sync=11011 RxData=10100 Preamble=11001 RxFifoFull=10110 RxState=10101 WUT=00001
 	{0x05,	0x00},			// Int Enable 1		
 	{0x06,	0x00},			// Int Enable 2		
 	{0x07,	0x00},			// Control 1		Standby
@@ -695,7 +695,8 @@ const uint8_t rfmConfig_Core[][2] = { // Start the device inert but ready, inter
 };
 const uint8_t rfmConfig_ModeConfigs[][4] = {
 //	 Addr,FHSS,4800,3500/AFSK								FHSS		4800		3500/AFSK
-	{0x1C,0x27,0x2B,0x2B},		// IF B/W					
+	// {0x1C,0x27,0x2B,0x2B},		// IF B/W					
+	{0x1C,0x2B,0x2B,0x2B},		// IF B/W					
 	{0x1F,0x03,0x03,0x03},      // Clk Gear					
 	{0x20,0x68,0xD0,0x1E},      // Clk Ratio				
 	{0x21,0x01,0x00,0x20},      // Clk Offset 2				
@@ -703,7 +704,7 @@ const uint8_t rfmConfig_ModeConfigs[][4] = {
 	{0x23,0x93,0x49,0xB0},      // Clk Offset 0				
 	{0x24,0x04,0x00,0x00},      // Clk Gain 1				
 	{0x25,0x62,0x99,0xA2},      // Clk Gain 0				
-	{0x1D,0x04,0x44,0x44},      // AFC Gear					
+	{0x1D,0x44,0x44,0x44},      // AFC Gear					
 	{0x1E,0x0A,0x0A,0x0A},      // AFC Timing				
 	{0x2A,0x1D,0x1D,0x30},      // AFC Limit				+/-18kHz	+/-18kHz	+/-30kHz
 	{0x69,0x60,0x60,0x60},		// AGC Override				
@@ -742,16 +743,20 @@ const uint8_t rfmConfig_FhssConfig[][2] = {
 	// F2	Lower Byte of CRC-16 IBM/ARC
 	
 	// Packet and FIFO
-	{0x30,0x88},		// Data Ctrl		Packet Handler LSB First
+	//{0x30,0x88},		// Data Ctrl		Packet Handler LSB First
+	{0x30,0xC0},		// Data Ctrl		Dragon Link Config
 	{0x32,0x00},		// Header Ctrl 1	Rx'd Hdr is Byte 3,2
-	// {0x33,0x0A},		// Header Ctrl 2	Hdr Defined by 3E ; Sync 3,2,0	
-	{0x33,0x02},		// Header Ctrl 2	Hdr Defined by 3E ; Sync 3,2,0	
-	{0x34,0x08},		// Preamble Length	3 nibbles
-	{0x35,0x28},		// Preamble Detect	3 nibbles
+	{0x33,0x0C},		// Header Ctrl 2	Dragon Link Sync 3 & 2 & 1
+	// {0x33,0x02},		// Header Ctrl 2	Hdr Defined by 3E ; Sync 3,2,0	
+	{0x34,0x03},		// Preamble Length	3 nibbles
+	//{0x35,0x28},		// Preamble Detect	3 nibbles
+	{0x35,0x08},		// Preamble Detect	Dragon Link
 	// {0x60,0x00},		// Preamble	Thresh						
-	{0x36,0b11010010},	// Sync Word 3		90, D0
-	{0x37,0b11001010},	// Sync Word 2		42, 50					
-	{0x38,0x00},		// Sync Word 1		Always E1					
+	// {0x36,0b11010010},	// Sync Word 3		90, D0
+	// {0x37,0b11001010},	// Sync Word 2		42, 50					
+	{0x36,0x90},	// Dragon Link		90, D0
+	{0x37,0x42},	// Dragon Link		42, 50					
+	{0x38,0xE1},		// Sync Word 1		Always E1					
 	{0x39,0x00},		// Sync Word 0							
 	{0x3A,0x00},		// Tx Header 3							
 	{0x3B,0x00},		// Tx Header 2							
