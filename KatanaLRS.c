@@ -468,8 +468,9 @@ void loop(void){
 					rfmSetRxTxSw(RFM_rxon);
 					rfmWriteReg(0x07, RFM_rxon | 0x02);
 					*/
+					
 					// freqOffset = (freqOffset >= 320)? -320 : freqOffset+5;
-					freqOffset = (freqOffset >= 24)? -24 : freqOffset+1;
+					freqOffset = 0; // (freqOffset >= 24)? -24 : freqOffset+1;
 					rfmWriteReg(0x73, freqOffset);
 					rfmWriteReg(0x74, freqOffset>>8);
 					printf("FO %d\n",freqOffset);
@@ -533,7 +534,7 @@ void loop(void){
 				} */
 				
 				// if(rfmIntList&RFM_INT_PKT_RXED){
-				if(0){ //RFM_INT){
+				if(0){ //RFM_INT){ //
 					// Receive
 					rfmIntList = rfmGetInterrupts();
 					// dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
