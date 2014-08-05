@@ -305,9 +305,9 @@ void setup(void){
 	
 	// rfmSetManualFreq(0x6400);
 	
-	// for(uint8_t i=0; i<64; i++){
-		// dataBufferA[i] = (i&0x01)? 0x00:0xFF;
-	// }
+	for(uint8_t i=0; i<64; i++){
+		dataBufferA[i] = i; //(i&0x01)? 0x00:0xFF;
+	}
 	
 	// Development
 	
@@ -422,24 +422,24 @@ void loop(void){
 				
 				if(currentTime > time1sec){
 					// time1sec = currentTime+4200;
-					time1sec = currentTime+2700;
+					time1sec = currentTime+500;
 					// updateVolts(FAST);
 					rcOutputs(ENABLED);
 					sys.statusLEDs = ENABLED;
 					
-					
+					// Stability Check, register checked inspired by OpenLRSng
 					if(rfmReadReg(0x2D) != 0x00){
 						printf("RFM Bricked, Resetting!\n");
 						
 						rfmReset();
 						for(uint8_t i=0; (i<200) && !rfmMode(IDLE_STANDBY); i++) _delay_us(100);
 						for(uint8_t i=0; (i<100) && !rfmMode(RX_FHSS_LRS); i++) _delay_us(100);
-						rfmWriteReg(0x05, 0x02);	
+						rfmWriteReg(0x05, 0x02);
 						rfmWriteReg(0x06, 0);
 						rfmSetLrsChannel(dlFreqList[dlChannel]);
 					}
 					
-					
+					/* Offset Tx Test Modifications
 					rfmWriteReg(0x71,0x30);
 					rfmSetTxPower(0);
 					_delay_us(200);
@@ -461,12 +461,15 @@ void loop(void){
 					rfmWriteReg(0x73, freqOffset);
 					rfmWriteReg(0x74, freqOffset>>8);
 					printf("FO %d\n",freqOffset);
+					*/
 					
 					/*
+					// Receive Enable, Offset Shifting
 					rfmSetRxTxSw(RFM_rxon);
 					rfmWriteReg(0x07, RFM_rxon | 0x02);
+					*/
 					// freqOffset = (freqOffset >= 320)? -320 : freqOffset+5;
-					freqOffset = (freqOffset >= 320)? -320 : freqOffset+4;
+					freqOffset = (freqOffset >= 24)? -24 : freqOffset+1;
 					rfmWriteReg(0x73, freqOffset);
 					rfmWriteReg(0x74, freqOffset>>8);
 					printf("FO %d\n",freqOffset);
@@ -478,8 +481,26 @@ void loop(void){
 					// printf("Freq: %lu MHz\n",carrierFreq);
 					// printf("F\t%u\n",manualFreq);
 					
-
-					*/
+					
+					// Transmit Dragonlink Packet
+					rfmSetRxTxSw(0);
+					rfmSetTxPower(0);
+					rfmClearTxFIFO();
+					rfmWriteReg(0x05, 0x04);
+					rfmWriteFIFOArray(dataBufferA,20);
+					rfmWriteReg(0x3E,20);
+					rfmSetRxTxSw(RFM_txon);
+					rfmWriteReg(0x07, RFM_txon | 0x02);
+					for(uint8_t i=0; (i<200) && !RFM_INT; i++){ // Counting on FHSS Config to set Reg 0x05 to 0x02
+						// rfmGetInterrupts();
+						// rfmGetRxTx(RFM_txon);
+						_delay_ms(1);
+						if(i==199) printf("P3\n");
+					}
+					rfmSetRxTxSw(0);
+					rfmWriteReg(0x07, 0x02);
+					rfmGetInterrupts();
+					
 					
 
 					
@@ -519,10 +540,6 @@ void loop(void){
 					// rfmSetLrsChannel(dlFreqList[dlChannel]);
 					uint8_t payloadSize = rfmReadReg(0x4B);
 					rfmReadFIFOn(dataBufferA,20);
-					// rfmSetRxTxSw(0);
-					// rfmSetTxPower(0);
-					// int16_t afcValue = (int16_t)( (((int16_t)(rfmReadReg(0x2B)))<<2)|(rfmReadReg(0x2C)>>6) ); //(int16_t)( (((int16_t)rfmReadReg(0x2B))<<2) | (rfmReadReg(0x2C)&0xC0) );
-					// int16_t afcValue = (int16_t)( ((int16_t)((((uint16_t)rfmReadReg(0x2B))<<8))>>6)|(rfmReadReg(0x2C)>>6) ); // What an complete mess! Just to tack two fields together!
 					int16_t afcValue = (((int16_t)((int8_t)rfmReadReg(0x2B)))<<2) | (rfmReadReg(0x2C)>>6);
 					// printf("DL %d\tAFC %d\nD ",dlChannel,afcValue);
 					// for(uint8_t i=0; i<20; i++){
@@ -533,6 +550,8 @@ void loop(void){
 					
 					/*
 					// ReTransmit
+					rfmSetRxTxSw(0);
+					rfmSetTxPower(0);
 					rfmClearTxFIFO();
 					rfmWriteReg(0x05, 0x04);
 					rfmWriteFIFOArray(dataBufferA,payloadSize);

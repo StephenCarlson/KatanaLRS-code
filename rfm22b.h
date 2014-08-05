@@ -703,10 +703,11 @@ const uint8_t rfmConfig_ModeConfigs[][4] = {
 	{0x22,0x3A,0x9D,0x72},      // Clk Offset 1				
 	{0x23,0x93,0x49,0xB0},      // Clk Offset 0				
 	{0x24,0x04,0x00,0x00},      // Clk Gain 1				
-	{0x25,0x62,0x99,0xA2},      // Clk Gain 0				
-	{0x1D,0x44,0x44,0x44},      // AFC Gear					
+	{0x25,0x3A,0x99,0xA2},      // Clk Gain 0				
+	{0x1D,0x44,0x44,0x44},      // AFC Gear	AFC Enabled				
+	{0x1D,0x44,0x04,0x44},      // AFC Gear AFC Disabled					
 	{0x1E,0x0A,0x0A,0x0A},      // AFC Timing				
-	{0x2A,0x1D,0x1D,0x30},      // AFC Limit				+/-18kHz	+/-18kHz	+/-30kHz
+	{0x2A,0x20,0x1D,0x30},      // AFC Limit				+/-18kHz	+/-18kHz	+/-30kHz
 	{0x69,0x60,0x60,0x60},		// AGC Override				
 	
 	{0x6D,0x08,0x08,0x08},		// Tx Power					All: Direct-Tie Config, Lowest Power
@@ -744,19 +745,19 @@ const uint8_t rfmConfig_FhssConfig[][2] = {
 	
 	// Packet and FIFO
 	//{0x30,0x88},		// Data Ctrl		Packet Handler LSB First
-	{0x30,0xC0},		// Data Ctrl		Dragon Link Config
+	{0x30,0xC8},		// Data Ctrl		Dragon Link Config
 	{0x32,0x00},		// Header Ctrl 1	Rx'd Hdr is Byte 3,2
 	{0x33,0x0C},		// Header Ctrl 2	Dragon Link Sync 3 & 2 & 1
 	// {0x33,0x02},		// Header Ctrl 2	Hdr Defined by 3E ; Sync 3,2,0	
-	{0x34,0x03},		// Preamble Length	3 nibbles
+	{0x34,0x04},		// Preamble Length	3 nibbles
 	//{0x35,0x28},		// Preamble Detect	3 nibbles
-	{0x35,0x08},		// Preamble Detect	Dragon Link
+	{0x35,0x18},		// Preamble Detect	Dragon Link
 	// {0x60,0x00},		// Preamble	Thresh						
 	// {0x36,0b11010010},	// Sync Word 3		90, D0
 	// {0x37,0b11001010},	// Sync Word 2		42, 50					
-	{0x36,0x90},	// Dragon Link		90, D0
-	{0x37,0x42},	// Dragon Link		42, 50					
-	{0x38,0xE1},		// Sync Word 1		Always E1					
+	{0x36,0x20},	// Dragon Link		90, 20
+	{0x37,0x85},	// Dragon Link		42, 85					
+	{0x38,0xC2},		// Sync Word 1	E1, C2					
 	{0x39,0x00},		// Sync Word 0							
 	{0x3A,0x00},		// Tx Header 3							
 	{0x3B,0x00},		// Tx Header 2							
