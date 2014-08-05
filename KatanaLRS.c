@@ -319,11 +319,12 @@ void loop(void){
 	static uint8_t eltTransmitCount = 0;
 	// static uint16_t failsafeCounter = 0;
 	
-	static uint16_t manualFreq = 3200;
+	static uint16_t manualFreq = 19800;
 	
 	static uint32_t time1sec;
 	static uint32_t time5sec;
 	static int16_t freqOffset = 0;
+	static int16_t afcValue = 0;
 	
 	uint16_t rfmIntList = 0;
 	// uint8_t rfmFIFO[64];
@@ -411,8 +412,8 @@ void loop(void){
 				uint32_t currentTime = timer1ms; // Avoid Race Condition?
 				sei();
 				if(currentTime > time5sec){
-					time5sec = currentTime + 5000;
-					
+					time5sec = currentTime + 30000;
+					// manualFreq = 3200 + (uint16_t)((((uint32_t)dlFreqList[dlChannel]*1728) + 5) / 10);
 					// dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
 					// rfmSetLrsChannel(dlFreqList[dlChannel]);
 					
@@ -421,8 +422,8 @@ void loop(void){
 				}
 				
 				if(currentTime > time1sec){
-					// time1sec = currentTime+4200;
-					time1sec = currentTime+500;
+					time1sec = currentTime+2000;
+					// time1sec = currentTime+500;
 					// updateVolts(FAST);
 					rcOutputs(ENABLED);
 					sys.statusLEDs = ENABLED;
@@ -463,17 +464,25 @@ void loop(void){
 					printf("FO %d\n",freqOffset);
 					*/
 					
-					/*
+					
 					// Receive Enable, Offset Shifting
 					rfmSetRxTxSw(RFM_rxon);
 					rfmWriteReg(0x07, RFM_rxon | 0x02);
-					*/
 					
+					
+					
+					// uint16_t value = 3200 + (uint16_t)((((uint32_t)dlFreqList[dlChannel]*1728) + 5) / 10) + afcValue;
+					// manualFreq += ((value>>5) - (manualFreq>>5));
+					manualFreq += ((currentTime > timestamp) && (currentTime-timestamp)<2000)? ((afcValue>>1)) : 0; // - (manualFreq>>2));
+					rfmSetManualFreq(manualFreq);
+					printf("FQ\t%u\n",manualFreq);
+					/*
 					// freqOffset = (freqOffset >= 320)? -320 : freqOffset+5;
-					freqOffset = 0; // (freqOffset >= 24)? -24 : freqOffset+1;
+					freqOffset = (freqOffset >= 128)? -128 : freqOffset+8;
 					rfmWriteReg(0x73, freqOffset);
 					rfmWriteReg(0x74, freqOffset>>8);
 					printf("FO %d\n",freqOffset);
+					*/
 					// dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
 					// manualFreq = (manualFreq>=40000)? 3200 : manualFreq+32 ;
 					// rfmSetManualFreq(manualFreq);
@@ -482,7 +491,7 @@ void loop(void){
 					// printf("Freq: %lu MHz\n",carrierFreq);
 					// printf("F\t%u\n",manualFreq);
 					
-					
+					/*
 					// Transmit Dragonlink Packet
 					rfmSetRxTxSw(0);
 					rfmSetTxPower(0);
@@ -501,7 +510,7 @@ void loop(void){
 					rfmSetRxTxSw(0);
 					rfmWriteReg(0x07, 0x02);
 					rfmGetInterrupts();
-					
+					*/
 					
 
 					
@@ -534,14 +543,15 @@ void loop(void){
 				} */
 				
 				// if(rfmIntList&RFM_INT_PKT_RXED){
-				if(0){ //RFM_INT){ //
+				if(RFM_INT){ //0){ //
 					// Receive
 					rfmIntList = rfmGetInterrupts();
 					// dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
 					// rfmSetLrsChannel(dlFreqList[dlChannel]);
 					uint8_t payloadSize = rfmReadReg(0x4B);
 					rfmReadFIFOn(dataBufferA,20);
-					int16_t afcValue = (((int16_t)((int8_t)rfmReadReg(0x2B)))<<2) | (rfmReadReg(0x2C)>>6);
+					// int16_t afcValue = (((int16_t)((int8_t)rfmReadReg(0x2B)))<<2) | (rfmReadReg(0x2C)>>6);
+					afcValue = (((int16_t)((int8_t)rfmReadReg(0x2B)))<<2) | (rfmReadReg(0x2C)>>6);
 					// printf("DL %d\tAFC %d\nD ",dlChannel,afcValue);
 					// for(uint8_t i=0; i<20; i++){
 						// printf("%X ",dataBufferA[i]); //0x00);
