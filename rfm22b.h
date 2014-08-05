@@ -763,7 +763,7 @@ const uint8_t rfmConfig_FhssConfig[][2] = {
 	{0x3B,0x00},		// Tx Header 2							
 	{0x3C,0x00},		// Tx Header 1							
 	{0x3D,0x00},		// Tx Header 0							
-	{0x3E,0x14},		// Tx Pkt Length	13 Bytes per packet
+	{0x3E,0x0E},		// Tx Pkt Length	13 Bytes per packet
 	{0x3F,0x00},		// Check Header 3						
 	{0x40,0x00},		// Check Header 2						
 	{0x41,0x00},		// Check Header 1						

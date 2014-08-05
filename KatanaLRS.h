@@ -3,8 +3,8 @@
 
 
 // Behavioral Switches
-#define RFM23BP
-// #define RFM22B
+// #define RFM23BP
+#define RFM22B
 
 
 
@@ -104,6 +104,7 @@ static volatile uint16_t pwmFrameSum; // Must be able to contain the accumulated
 const uint8_t dlFreqList[] = { 24,142,169,133,32,96,58,125,87,77,141,177,55,42,121,78,159,138,175,35,86,36};
 static volatile uint8_t dlChannel = 0;
 static volatile uint32_t timestamp = 0;
+static volatile int16_t freqOffset = 0;
 
 // static struct{
 	// uint16_t ch1:10;

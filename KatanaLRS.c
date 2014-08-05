@@ -197,6 +197,12 @@ ISR(USART_RX_vect){
 		case 'B':
 			printf("Battery: %u\n", volt.atMega);
 			break;
+		case '+':
+			freqOffset += 5;
+			break;
+		case '-':
+			freqOffset -= 5;
+			break;
 		case 'M':
 			sys.monitorMode = 1;
 			break;
@@ -323,7 +329,7 @@ void loop(void){
 	
 	static uint32_t time1sec;
 	static uint32_t time5sec;
-	static int16_t freqOffset = 0;
+	// static int16_t freqOffset = 0;
 	static int16_t afcValue = 0;
 	
 	uint16_t rfmIntList = 0;
@@ -423,6 +429,7 @@ void loop(void){
 				
 				if(currentTime > time1sec){
 					time1sec = currentTime+2000;
+					RFM_PMBL = HIGH;
 					// time1sec = currentTime+500;
 					// updateVolts(FAST);
 					rcOutputs(ENABLED);
@@ -473,9 +480,15 @@ void loop(void){
 					
 					// uint16_t value = 3200 + (uint16_t)((((uint32_t)dlFreqList[dlChannel]*1728) + 5) / 10) + afcValue;
 					// manualFreq += ((value>>5) - (manualFreq>>5));
-					manualFreq += ((currentTime > timestamp) && (currentTime-timestamp)<2000)? ((afcValue>>1)) : 0; // - (manualFreq>>2));
-					rfmSetManualFreq(manualFreq);
-					printf("FQ\t%u\n",manualFreq);
+					// manualFreq += ((currentTime > timestamp) && (currentTime-timestamp)<2000)? ((afcValue>>1)) : 0; // - (manualFreq>>2));
+					// rfmSetManualFreq(manualFreq);
+					// printf("FQ\t%u\n",manualFreq);
+					// manualFreq = 3200 + (uint16_t)((((uint32_t)dlFreqList[dlChannel]*1728) + 5) / 10);
+					freqOffset += ((currentTime > timestamp) && (currentTime-timestamp)<2000)? ((afcValue>>2)) : 0;
+					rfmSetManualFreq(manualFreq+freqOffset);
+					printf("FQ\t%d\n",freqOffset);
+					
+					
 					/*
 					// freqOffset = (freqOffset >= 320)? -320 : freqOffset+5;
 					freqOffset = (freqOffset >= 128)? -128 : freqOffset+8;
@@ -513,7 +526,7 @@ void loop(void){
 					*/
 					
 
-					
+					RFM_PMBL = LOW;
 				}
 					/*
 					// rfmReset();
@@ -544,9 +557,10 @@ void loop(void){
 				
 				// if(rfmIntList&RFM_INT_PKT_RXED){
 				if(RFM_INT){ //0){ //
+					RFM_PMBL = HIGH;
 					// Receive
 					rfmIntList = rfmGetInterrupts();
-					// dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
+					dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0; // Incremented in interrupt handler
 					// rfmSetLrsChannel(dlFreqList[dlChannel]);
 					uint8_t payloadSize = rfmReadReg(0x4B);
 					rfmReadFIFOn(dataBufferA,20);
@@ -558,6 +572,9 @@ void loop(void){
 					// }
 					// printf("\n");
 					rfmClearRxFIFO();
+					
+					manualFreq = 3200 + (uint16_t)((((uint32_t)dlFreqList[dlChannel]*1728) + 5) / 10);
+					rfmSetManualFreq(manualFreq+freqOffset);
 					
 					/*
 					// ReTransmit
@@ -586,6 +603,7 @@ void loop(void){
 					rfmWriteReg(0x07, RFM_rxon | 0x02);
 					
 					printf("CH %u\t%d\n",(dlChannel),afcValue);
+					RFM_PMBL = LOW;
 				}
 				
 				
@@ -616,7 +634,6 @@ void loop(void){
 			
 	}
 
-	
 	// LED_OR = LOW;
 }
 
