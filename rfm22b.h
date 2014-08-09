@@ -659,7 +659,7 @@ const uint8_t rfmConfig_Core[][2] = { // Start the device inert but ready, inter
 	{RFM_GPIO_1,	RFM_p_TX_ST},	// GPIO1 			Tx
 	{0x0E,	0x00},					// I/O Ports		None
 	#endif
-	{RFM_GPIO_2,	RFM_p_PMBL},	// GPIO2 		RFM_p_PMBL RFM_p_RX_OUT RFM_p_WUT	Sync=11011 RxData=10100 Preamble=11001 RxFifoFull=10110 RxState=10101 WUT=00001
+	{RFM_GPIO_2,	RFM_p_RX_OUT},	// GPIO2 		RFM_p_PMBL RFM_p_RX_OUT RFM_p_WUT	Sync=11011 RxData=10100 Preamble=11001 RxFifoFull=10110 RxState=10101 WUT=00001
 	{0x05,	0x00},			// Int Enable 1		
 	{0x06,	0x00},			// Int Enable 2		
 	{0x07,	0x00},			// Control 1		Standby
@@ -755,15 +755,15 @@ const uint8_t rfmConfig_FhssConfig[][2] = {
 	// {0x60,0x00},		// Preamble	Thresh						
 	// {0x36,0b11010010},	// Sync Word 3		90, D0
 	// {0x37,0b11001010},	// Sync Word 2		42, 50					
-	{0x36,0x20},	// Dragon Link		90, 20
-	{0x37,0x85},	// Dragon Link		42, 85					
-	{0x38,0xC2},		// Sync Word 1	E1, C2					
+	{0x36,0x90},	// Dragon Link		90, 20	First set aligns so that SysID byte is contiguous.
+	{0x37,0x42},	// Dragon Link		42, 85	Second set aligns so that preamble polarity matches 
+	{0x38,0xE1},		// Sync Word 1	E1, C2					
 	{0x39,0x00},		// Sync Word 0							
 	{0x3A,0x00},		// Tx Header 3							
 	{0x3B,0x00},		// Tx Header 2							
 	{0x3C,0x00},		// Tx Header 1							
 	{0x3D,0x00},		// Tx Header 0							
-	{0x3E,0x0E},		// Tx Pkt Length	13 Bytes per packet
+	{0x3E,0x0D},		// Tx Pkt Length	13 Bytes per packet (12.5 by bits, round up)
 	{0x3F,0x00},		// Check Header 3						
 	{0x40,0x00},		// Check Header 2						
 	{0x41,0x00},		// Check Header 1						

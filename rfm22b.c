@@ -213,6 +213,7 @@ uint16_t rfmGetInterrupts(void){
 		rfmIntList = transferSPI(0x00)<<8;	// Int Stat 1
 		rfmIntList |= transferSPI(0x00);	// Int Stat 2
 	CS_RFM = HIGH;
+	_delay_us(2);
 	return rfmIntList;
 }
 
@@ -286,7 +287,7 @@ uint8_t rfmReadReg(uint8_t regAddress){
 		_delay_us(1);
 		uint8_t value = transferSPI(0xFF); // Seems that the line likes to rest high
 	CS_RFM = HIGH;
-	_delay_us(1);
+	_delay_us(2);
 	return value;
 }
 
@@ -327,7 +328,7 @@ void rfmReadFIFO(uint8_t *array){
 			array[i] = transferSPI(i); //0x00);
 		}
 	CS_RFM = HIGH;
-	_delay_us(1);
+	_delay_us(2);
 }
 
 void rfmReadFIFOn(uint8_t *array, uint8_t n){
@@ -338,7 +339,7 @@ void rfmReadFIFOn(uint8_t *array, uint8_t n){
 			array[i] = transferSPI(i); //0x00);
 		}
 	CS_RFM = HIGH;
-	_delay_us(1);
+	_delay_us(2);
 }
 
 uint8_t rfmWriteFIFOArray(uint8_t *array, uint8_t n){
@@ -351,7 +352,7 @@ uint8_t rfmWriteFIFOArray(uint8_t *array, uint8_t n){
 			count++;
 		}
 	CS_RFM = HIGH;
-	_delay_us(1);
+	_delay_us(2);
 	return count;
 }
 
@@ -367,7 +368,7 @@ uint8_t rfmWriteFIFOStr(char *array){ //, uint8_t index){
 			count++;
 		}
 	CS_RFM = HIGH;
-	_delay_us(1);
+	_delay_us(2);
 	return(count);
 }
 

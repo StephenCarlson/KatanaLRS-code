@@ -91,7 +91,8 @@ typedef struct{
 // Global Variables
 static char dataBufferA[BUFFER_SIZE]; //volatile
 // static volatile uint16_t timer1min = 0; // Rolls at 18.2 Hours
-static volatile uint32_t timer1ms = 0; // Reset at 1 min
+static volatile uint32_t timer1ms = 0; 
+static volatile uint32_t timer1us_p = 0;
 
 static uint16_t rfmWriteErrors;
 static uint8_t noiseFloor = 60; // Start with ~ -80 dBm, will work down from this
@@ -103,8 +104,9 @@ static volatile uint16_t pwmFrameSum; // Must be able to contain the accumulated
 
 const uint8_t dlFreqList[] = { 24,142,169,133,32,96,58,125,87,77,141,177,55,42,121,78,159,138,175,35,86,36};
 static volatile uint8_t dlChannel = 0;
-static volatile uint32_t timestamp = 0;
-static volatile int16_t freqOffset = 0;
+static volatile uint32_t timestampPacketRxd = 0;
+static volatile int16_t freqOffset = 180;
+static uint8_t rfmFIFO[64];
 
 // static struct{
 	// uint16_t ch1:10;
@@ -116,6 +118,7 @@ static volatile int16_t freqOffset = 0;
 	// uint16_t ch7:10;
 	// uint16_t ch8:10;
 // } rcCommands;
+// static volatile uint16_t rcCommands[CHANNELS]; // Is volatile enough to guarantee not chopped bytes on PPM asserts?
 
 static struct{
 	int32_t lat:30;		// 536870912 > 089999999
@@ -162,6 +165,21 @@ static struct{
 #endif
 
 #include "elt.c"
+
+
+// Function Prototypes
+void setup(void);
+void loop(void);
+void printState(void);
+void rcOutputs(uint8_t);
+void uartIntConfig(uint8_t);
+void wdtIntConfig(uint8_t, uint8_t);
+void printRegisters(void);
+uint8_t systemSleep(uint8_t);
+uint8_t atMegaInit(void);
+char deviceIdCheck(void);
+void printHelpInfo(void);
+
 
 #endif // KATANALRS_DEF_H
 

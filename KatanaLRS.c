@@ -43,7 +43,7 @@
 
 
 // Timers 					Description
-// Timer 0 (8-bit)			System Time Counter (10 ms), not needed given Timer 1?
+// Timer 0 (8-bit)			System Time Counter (1 ms)
 // 		OC0A	PD6			Pin 7, not really available
 // 		OC0B	PD5			Pin 6, not really available
 
@@ -51,44 +51,25 @@
 //		OC1A	PB1			PPM Output Line
 //		OC1B	PB2			/CS Line, can't use
 
-// Timer 2 (8-bit)			Would like to use for AFSK on ELT
+// Timer 2 (8-bit)			AFSK on ELT
 //		OC2A	PB3			MOSI, can create tones for ELT on this
 //		OC2B	PD3			Unconnected spare line, use for piezo buzzer? Free otherwise
 
 
-
-
-
-
-
-
 #include "KatanaLRS.h"
-
-// Function Prototypes
-void setup(void);
-void loop(void);
-void printState(void);
-void rcOutputs(uint8_t);
-void uartIntConfig(uint8_t);
-void wdtIntConfig(uint8_t, uint8_t);
-void printRegisters(void);
-uint8_t systemSleep(uint8_t);
-uint8_t atMegaInit(void);
-char deviceIdCheck(void);
-void printHelpInfo(void);
-
 
 
 // Interrupt Vectors (Listed in Priority Order)
-ISR(INT0_vect){
+// RFM Module Interrupt Input
+ISR(INT0_vect){ // Configured for Falling-Edge
 	// LED_OR = HIGH;
 	sys.intSrc.rfm = 1;
-	timestamp = timer1ms;
-	
+	timestampPacketRxd = timer1us_p + (TCNT1>>1);
 	// dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0; 
 	//EIMSK = 0;
 }
 
+// Sleep-Immune UART Wake Mechanism
 ISR(PCINT2_vect){
 	sys.intSrc.uart = 1;
 	PCICR = 0;
@@ -99,13 +80,24 @@ ISR(WDT_vect){
 	sys.intSrc.wdt = 1;
 }
 
+// ELT Audio Generator - See elt.c for this handler, included here for reference
+// ISR(TIMER2_COMPA_vect){}
+
+// LRS Packet Timer
+// ISR(TIMER2_COMPA_vect  OVF_vect?){
+	
+// }
+
+// PPM Input Parser
 // ISR(TIMER1_CAPT_vect){
 	// This is where the Input PPM steam is parsed
 	
 	
 // }
 
+// Servo PPM/PWM Generator
 ISR(TIMER1_OVF_vect ){
+	timer1us_p += (ICR1>>1);
 	switch(ch){
 		case 0:
 			PWM_1 = HIGH;
@@ -166,11 +158,13 @@ ISR(TIMER1_OVF_vect ){
 		case 8:
 			PORTC &= ~(0x0F);
 			PORTD &= ~(0xF0);
-			pwmFrameSum = (pwmFrameSum > 40000)? 0 : pwmFrameSum;
-			ICR1 = (40000 - pwmFrameSum); // Hazard if negative!
+			// pwmFrameSum = (pwmFrameSum > 40000)? 0 : pwmFrameSum;
+			// ICR1 = (40000 - pwmFrameSum); // Hazard if negative!
+			ICR1 = (pwmFrameSum<36000)? (40000 - pwmFrameSum) : 4000; // Prototype, test this sometime
+			// pwmFrameSum = 0;
 			ch = 0;
 			OCR1A = 800;	// Produce a 400 us low pulse
-			TCCR1A |= _BV(COM1A1)|_BV(COM1A0); // COM1A0 Flips to Idle-High
+			TCCR1A |= _BV(COM1A1)|_BV(COM1A0); // Including COM1A0 Flips to behavior to Idle-High
 			break;
 		default:
 			ch = 8;
@@ -178,6 +172,7 @@ ISR(TIMER1_OVF_vect ){
 	// LED_OR = LOW;
 }
 
+// System Timer - 1ms Resolution
 ISR(TIMER0_COMPA_vect){
 	//LED_OR = HIGH;
 	sys.intSrc.timer0 = 1;
@@ -187,6 +182,7 @@ ISR(TIMER0_COMPA_vect){
 	//LED_OR = LOW;
 }
 
+// UART Command Handler
 ISR(USART_RX_vect){
 	sys.intSrc.uart = 1;
 	sys.monitorMode = 0;
@@ -226,6 +222,7 @@ ISR(USART_RX_vect){
 	}	
 }
 
+// Low-Noise ADC Exit Handler
 ISR(ADC_vect){
 	sleep_disable();
 }
@@ -312,7 +309,7 @@ void setup(void){
 	// rfmSetManualFreq(0x6400);
 	
 	for(uint8_t i=0; i<64; i++){
-		dataBufferA[i] = i; //(i&0x01)? 0x00:0xFF;
+		rfmFIFO[i] = i; //(i&0x01)? 0x00:0xFF;
 	}
 	
 	// Development
@@ -329,11 +326,13 @@ void loop(void){
 	
 	static uint32_t time1sec;
 	static uint32_t time5sec;
+	static uint32_t timeoutFhssPkt;
+	// static uint32_t periodFhssPkt = 22222;
+	const uint32_t periodFhssPkt = 22222;
 	// static int16_t freqOffset = 0;
 	static int16_t afcValue = 0;
 	
 	uint16_t rfmIntList = 0;
-	// uint8_t rfmFIFO[64];
 	#define RFM_INT_VALID_SYNC (1<<(7))
 	#define RFM_INT_PKT_RXED	(1<<(1))<<8
 	
@@ -415,10 +414,14 @@ void loop(void){
 				//	break;
 				//}
 				cli();
-				uint32_t currentTime = timer1ms; // Avoid Race Condition?
+					// uint32_t currentTime1ms = timer1ms; // Avoid Race Condition, two bytes, one can change if interrupted in this process.
+					uint32_t currentTime1us = timer1us_p + (TCNT1>>1);
+					// uint32_t packetRxTimestamp = timestampPacketRxd; // To eliminate possible race conditions?, and speedup the system by copying to a register.
 				sei();
-				if(currentTime > time5sec){
-					time5sec = currentTime + 30000;
+				uint32_t currentTime1ms = currentTime1us/1000;
+				
+				if(currentTime1ms > time5sec){
+					time5sec = currentTime1ms + 30000;
 					// manualFreq = 3200 + (uint16_t)((((uint32_t)dlFreqList[dlChannel]*1728) + 5) / 10);
 					// dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
 					// rfmSetLrsChannel(dlFreqList[dlChannel]);
@@ -427,10 +430,10 @@ void loop(void){
 					// printf("~%X,%X,%X\n",rfmReadReg(0x02),rfmReadReg(0x04),rfmReadReg(0x07));
 				}
 				
-				if(currentTime > time1sec){
-					time1sec = currentTime+2000;
+				if(0){ // currentTime1ms > time1sec){
+					time1sec = currentTime1ms+2000;
 					RFM_PMBL = HIGH;
-					// time1sec = currentTime+500;
+					// time1sec = currentTime1ms+500;
 					// updateVolts(FAST);
 					rcOutputs(ENABLED);
 					sys.statusLEDs = ENABLED;
@@ -447,30 +450,6 @@ void loop(void){
 						rfmSetLrsChannel(dlFreqList[dlChannel]);
 					}
 					
-					/* Offset Tx Test Modifications
-					rfmWriteReg(0x71,0x30);
-					rfmSetTxPower(0);
-					_delay_us(200);
-					rfmSetRxTxSw(RFM_txon);
-					rfmWriteReg(0x07, RFM_txon | 0x02);
-					_delay_ms(200);
-					rfmWriteReg(0x07, 0x02);
-					for(uint8_t i=0; (i<200) && !((rfmReadReg(0x62)>>5)^0x03); i++){
-						rfmWriteReg(0x07, 0x02);
-						if(i==199) printf("Fail to stop Tx\n");
-						_delay_ms(1);
-					}
-					rfmSetRxTxSw(0);
-					//rfmWriteReg(0x71,0x23);
-					//_delay_us(200);
-					
-					
-					freqOffset = (freqOffset >= 320)? -320 : freqOffset+4;
-					rfmWriteReg(0x73, freqOffset);
-					rfmWriteReg(0x74, freqOffset>>8);
-					printf("FO %d\n",freqOffset);
-					*/
-					
 					
 					// Receive Enable, Offset Shifting
 					rfmSetRxTxSw(RFM_rxon);
@@ -480,29 +459,13 @@ void loop(void){
 					
 					// uint16_t value = 3200 + (uint16_t)((((uint32_t)dlFreqList[dlChannel]*1728) + 5) / 10) + afcValue;
 					// manualFreq += ((value>>5) - (manualFreq>>5));
-					// manualFreq += ((currentTime > timestamp) && (currentTime-timestamp)<2000)? ((afcValue>>1)) : 0; // - (manualFreq>>2));
+					// manualFreq += ((currentTime1ms > timestampPacketRxd) && (currentTime1ms-timestampPacketRxd)<2000)? ((afcValue>>1)) : 0; // - (manualFreq>>2));
 					// rfmSetManualFreq(manualFreq);
 					// printf("FQ\t%u\n",manualFreq);
 					// manualFreq = 3200 + (uint16_t)((((uint32_t)dlFreqList[dlChannel]*1728) + 5) / 10);
-					freqOffset += ((currentTime > timestamp) && (currentTime-timestamp)<2000)? ((afcValue>>2)) : 0;
+					freqOffset += ((currentTime1us > timestampPacketRxd) && (currentTime1us-timestampPacketRxd)<2000000)? ((afcValue>>2)) : 0;
 					rfmSetManualFreq(manualFreq+freqOffset);
 					printf("FQ\t%d\n",freqOffset);
-					
-					
-					/*
-					// freqOffset = (freqOffset >= 320)? -320 : freqOffset+5;
-					freqOffset = (freqOffset >= 128)? -128 : freqOffset+8;
-					rfmWriteReg(0x73, freqOffset);
-					rfmWriteReg(0x74, freqOffset>>8);
-					printf("FO %d\n",freqOffset);
-					*/
-					// dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0;
-					// manualFreq = (manualFreq>=40000)? 3200 : manualFreq+32 ;
-					// rfmSetManualFreq(manualFreq);
-					// double carrierFreq = (43.0F+((float)(manualFreq)/64000.0F))*1000.0F;
-					// uint32_t carrierFreq = 430000+((manualFreq*10)/64);
-					// printf("Freq: %lu MHz\n",carrierFreq);
-					// printf("F\t%u\n",manualFreq);
 					
 					/*
 					// Transmit Dragonlink Packet
@@ -510,7 +473,7 @@ void loop(void){
 					rfmSetTxPower(0);
 					rfmClearTxFIFO();
 					rfmWriteReg(0x05, 0x04);
-					rfmWriteFIFOArray(dataBufferA,20);
+					rfmWriteFIFOArray(rfmFIFO,20);
 					rfmWriteReg(0x3E,20);
 					rfmSetRxTxSw(RFM_txon);
 					rfmWriteReg(0x07, RFM_txon | 0x02);
@@ -528,85 +491,86 @@ void loop(void){
 
 					RFM_PMBL = LOW;
 				}
-					/*
-					// rfmReset();
-					rfmMode(IDLE_READY);
-					rfmClearTxFIFO();
-					rfmWriteReg(0x05, 0x04);	
-					rfmWriteReg(0x06, 0);	
-					rfmWriteFIFOArray(dataBufferA,60);
-					rfmWriteReg(0x3E,30);
-					rfmSetTxPower(0);
-					// rfmGetInterrupts();
-					rfmSetRxTxSw(RFM_txon);
-					rfmWriteReg(0x07, RFM_txon);
-					// _delay_us(100);
-					// rfmWriteReg(0x05, 0x04);
-					for(uint8_t i=0; (i<200) && !RFM_INT; i++){ // Counting on FHSS Config to set Reg 0x05 to 0x02
-						// rfmGetInterrupts();
-						// rfmGetRxTx(RFM_txon);
-						_delay_ms(1);
-						if(i==199) printf("P3\n");
-					}
-					rfmSetRxTxSw(0);
-					rfmGetInterrupts();
-					// rfmMode(IDLE_STANDBY);
-					// rfmIntList = rfmGetInterrupts();
-					// printf("%X\t%X\n",rfmIntList,RFM_INT);
-				} */
 				
-				// if(rfmIntList&RFM_INT_PKT_RXED){
 				if(RFM_INT){ //0){ //
 					RFM_PMBL = HIGH;
+					
 					// Receive
 					rfmIntList = rfmGetInterrupts();
 					dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0; // Incremented in interrupt handler
+					manualFreq = 3200 + (uint16_t)((((uint32_t)dlFreqList[dlChannel]*1728) + 5) / 10);
+					rfmSetManualFreq(manualFreq+freqOffset);
 					// rfmSetLrsChannel(dlFreqList[dlChannel]);
 					uint8_t payloadSize = rfmReadReg(0x4B);
-					rfmReadFIFOn(dataBufferA,20);
+					rfmReadFIFOn(rfmFIFO,15);
 					// int16_t afcValue = (((int16_t)((int8_t)rfmReadReg(0x2B)))<<2) | (rfmReadReg(0x2C)>>6);
 					afcValue = (((int16_t)((int8_t)rfmReadReg(0x2B)))<<2) | (rfmReadReg(0x2C)>>6);
 					// printf("DL %d\tAFC %d\nD ",dlChannel,afcValue);
 					// for(uint8_t i=0; i<20; i++){
-						// printf("%X ",dataBufferA[i]); //0x00);
+						// printf("%X ",rfmFIFO[i]); //0x00);
 					// }
 					// printf("\n");
 					rfmClearRxFIFO();
 					
-					manualFreq = 3200 + (uint16_t)((((uint32_t)dlFreqList[dlChannel]*1728) + 5) / 10);
-					rfmSetManualFreq(manualFreq+freqOffset);
-					
-					/*
-					// ReTransmit
-					rfmSetRxTxSw(0);
-					rfmSetTxPower(0);
-					rfmClearTxFIFO();
-					rfmWriteReg(0x05, 0x04);
-					rfmWriteFIFOArray(dataBufferA,payloadSize);
-					rfmWriteReg(0x3E,payloadSize);
-					rfmSetRxTxSw(RFM_txon);
-					rfmWriteReg(0x07, RFM_txon | 0x02);
-					for(uint8_t i=0; (i<200) && !RFM_INT; i++){ // Counting on FHSS Config to set Reg 0x05 to 0x02
-						// rfmGetInterrupts();
-						// rfmGetRxTx(RFM_txon);
-						_delay_ms(1);
-						if(i==199) printf("P3\n");
-					}
-					rfmSetRxTxSw(0);
-					rfmWriteReg(0x07, 0x02);
-					rfmGetInterrupts();
-					*/
-					
 					// Clean Up
-					rfmWriteReg(0x05, 0x02);	
+					rfmWriteReg(0x05, 0x02);
 					rfmSetRxTxSw(RFM_rxon);
 					rfmWriteReg(0x07, RFM_rxon | 0x02);
 					
-					printf("CH %u\t%d\n",(dlChannel),afcValue);
+					// periodFhssPkt += (timestampPacketRxd) - periodFhssPkt;
+					timeoutFhssPkt = timestampPacketRxd + periodFhssPkt + (periodFhssPkt>>2);
+					
+					// Process Array - Extract Commands
+					// Media			sS012345 67sS0123 4567sS01 234567sS 01234567 sS01234567sS01234567sS
+					// rfmFIFO			543210Ss.3210Ss76.10Ss7654.Ss765432.76543210.
+					// dlReadArray		76543210/76543210/76543210/76543210
+					// DL Field Tags	MSBs     CH1      CH2      CH3
+					// 
+					// const uint8_t DL_BYTES = 10;
+					#define DL_BYTES 10
+					uint8_t dlReadArray[DL_BYTES];
+					// uint8_t k=0;
+					// for(uint8_t j=0; j<(DL_BYTES-4); j++){
+						// dlReadArray[k]   = ((rfmFIFO[j*5  ]&0xFC)>>2 | rfmFIFO[j*5+1]<<6);
+						// dlReadArray[k+1] = ((rfmFIFO[j*5+1]&0xF0)>>4 | rfmFIFO[j*5+2]<<4);
+						// dlReadArray[k+2] = ((rfmFIFO[j*5+2]&0xC0)>>6 | rfmFIFO[j*5+3]<<2);
+						// dlReadArray[k+3] =                             rfmFIFO[j*5+4];
+						// k+=4;
+					// }
+					for(uint8_t i=0; i<DL_BYTES; i++){
+						uint8_t offset = (i>>2)+i;
+						uint8_t shift =  ((i&0x03)+1)<<1;
+						dlReadArray[i] = (rfmFIFO[offset]>>(shift)) | (rfmFIFO[offset+1]<<(8-shift));
+					}
+					#define DL_CHANNELS 7
+					for(uint8_t i=0; i<DL_CHANNELS; i++){
+						// pwmValues[i] = ( ((dlReadArray[0]<<(8-i))&0x100) | dlReadArray[i] )*4 + 2000 - 22; // for [989:2011]us
+						pwmValues[i] = ( ((dlReadArray[0]<<(8-i))&0x100) | dlReadArray[i+1] )*5 + 2000 - 280; // [860:2137]us; [1000:2000]us -> [56:456]
+						printf("%4u ",pwmValues[i]>>1);
+					}
+					
+					/*
+					// printf("%X,",dlReadArray[0]);
+					for(uint8_t i=0; i<7; i++){
+						//pwmValues[i] = (( ((dlReadArray[0]>>i)&0x01)<<8 | dlReadArray[i+1] )<<1+1000)<<1;;
+						pwmValues[i] = (((uint16_t) dlReadArray[i+1]<<2) + 1000)<<1;
+						printf("%u,",pwmValues[i]>>1);
+					} */
+					
+					// printf("CH %2u\t%3d\t%lu\n",(dlChannel),afcValue,periodFhssPkt);
+					printf("CH %2u\t%3d\n",(dlChannel),afcValue);
 					RFM_PMBL = LOW;
 				}
 				
-				
+				if(currentTime1us  > timeoutFhssPkt){
+					dlChannel = (dlChannel < (sizeof(dlFreqList)-1))? dlChannel+1 : 0; // Incremented in interrupt handler
+					manualFreq = 3200 + (uint16_t)((((uint32_t)dlFreqList[dlChannel]*1728) + 5) / 10);
+					rfmSetManualFreq(manualFreq+freqOffset);
+					
+					LED_OR = HIGH;
+					timeoutFhssPkt = ((currentTime1us-timestampPacketRxd)>500000)? (currentTime1us + 500000) : (timeoutFhssPkt + periodFhssPkt); // + 100;
+					LED_OR = LOW;
+				}
 				
 			break;
 		case FAILSAFE:
@@ -824,15 +788,16 @@ uint8_t atMegaInit(void){
 	// SPCR	= (1<<SPE)|(1<<MSTR)|(1<<SPR0); // |(1<<CPOL)|(1<<CPHA) SPR0
 	
 	//I2C
-	TWCR = (1<<TWEN) | (1<<TWEA);
-	TWSR &= ~((1<<TWPS1) | (1<<TWPS0));
-	TWBR = ((F_CPU / I2C_FREQ) - 16) / 2;
+	// TWCR = (1<<TWEN) | (1<<TWEA);
+	// TWSR &= ~((1<<TWPS1) | (1<<TWPS0));
+	// TWBR = ((F_CPU / I2C_FREQ) - 16) / 2;
 	
 	// ADC
 	ADMUX 	= 0; //(1<<REFS0);	// AVcc Connected
 	ADCSRA 	= (1<<ADEN)|(1<<ADPS2)|(1<<ADPS1)|(1<<ADPS0)|(1<<ADIE);
 	DIDR0 	= (1<<ADC5D)|(1<<ADC4D)|(1<<ADC3D)|(1<<ADC2D)|(1<<ADC1D)|(1<<ADC0D);
-
+	
+	// Interrupts
 	//PCICR = 0; //(1<<PCIE2);
 	//PCMSK2 = 0; //(1<<PCINT16);
 	
