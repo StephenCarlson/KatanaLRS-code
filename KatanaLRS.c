@@ -347,10 +347,15 @@ void loop(void){
 		sys.intSrc.wdt = 0;
 		_delay_ms(1);
 	}
-		
+	
+	// typedef void *(*StateFunc)(); // This must be places as a global state machine variable
+	statefunc = (StateFunc)(*statefunc)(); // This goes in the main loop. Must prime the mechanism with: StateFunc statefunc = initialVector;
+	
+	
 	switch(sys.state){
-	/*
-		case DOWN:
+	
+//		case DOWN:
+void* systemDown(void){
 				wdtIntConfig(DISABLED,0);
 				noiseFloor = rfmGetRSSI();
 				updateVolts(SLOW);
@@ -368,7 +373,8 @@ void loop(void){
 				sys.statusLEDs = ENABLED;
 				uartIntConfig(DISABLED);
 				systemSleep(9);
-			break;
+}
+//			break;
 		case SLEEP:
 				wdtIntConfig(ENABLED,9);
 				updateVolts(SLOW);
@@ -410,7 +416,7 @@ void loop(void){
 				_delay_ms(30);
 			break;
 			
-			*/
+		
 		case ACTIVE:
 				wdtIntConfig(ENABLED, 5); // 0.5 sec timeout
 				//sys.state = ((sys.powerState == 0))? DOWN : SLEEP; //FAILSAFE; //sticksCentered() && 
