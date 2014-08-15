@@ -99,8 +99,9 @@ static uint8_t noiseFloor = 60; // Start with ~ -80 dBm, will work down from thi
 
 
 static volatile uint8_t ch;
-static volatile uint16_t pwmValues[CHANNELS] = {1200,1200,1200,1200,1200,1200,1200,1200}; // In uSec, 
+static volatile uint16_t pwmValues[CHANNELS] = {2000,2000,2000,2000,2000,2000,2000,2000}; // In uSec, 
 static volatile uint16_t pwmFrameSum; // Must be able to contain the accumulated sum of pwmValues[]
+static uint16_t pwmFailsafes[CHANNELS];
 
 const uint8_t dlFreqList[] = { 24,142,169,133,32,96,58,125,87,77,141,177,55,42,121,78,159,138,175,35,86,36};
 static volatile uint8_t dlChannel = 0;

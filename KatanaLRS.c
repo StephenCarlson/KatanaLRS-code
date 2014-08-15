@@ -275,17 +275,23 @@ void setup(void){
 	}	
 	
 	*((uint8_t*) &configFlags) = eeprom_read_byte((const uint8_t*) EEPROM_START);
+	eeprom_read_block(pwmFailsafes,(void *)(EEPROM_START+1),sizeof(pwmFailsafes));
 	
 	// Application Warm-up
 	TIMSK1 = _BV(TOIE1);
+	printf("\nFailsafes: ");
 	for(uint8_t i=0; i<CHANNELS; i++){
+		// pwmFailsafes[i] = (pwmFailsafes[i]<1720)? 1720 : (pwmFailsafes[i]>4275)? 4275 : pwmFailsafes[i]; // [1720:4275]
+		pwmFailsafes[i] = (pwmFailsafes[i]<1720 || pwmFailsafes[i]>4275)? ((i==2)? 2000 : 3000) : pwmFailsafes[i];
 		pwmValues[i] = 1500<<1;
+		printf("%4d ",pwmFailsafes[i]>>1);
 	}
+	printf("\n");
 	
 	gps.lat  = 89999999;
 	gps.lon  = 179999999;
 	gps.time = 235959;
-	gps.alt  = 1465;
+	gps.alt  = 1000;
 	gps.sats = 8;
 	gps.hdop = 15;
 	
@@ -586,7 +592,7 @@ void loop(void){
 				}
 				rcOutputs(ENABLED);
 				sys.statusLEDs = ENABLED;
-				for(uint8_t i=0; i<CHANNELS; i++) pwmValues[i] = 1000<<1;
+				for(uint8_t i=0; i<CHANNELS; i++) pwmValues[i] = pwmFailsafes[i];
 			break;
 		default:
 			sys.state = ACTIVE;
