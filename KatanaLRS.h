@@ -1,12 +1,10 @@
 #ifndef KATANALRS_DEF_H
 #define KATANALRS_DEF_H
 
-
+//* Preprocessor Directives
 // Behavioral Switches
 // #define RFM23BP
 #define RFM22B
-
-
 
 // Debug Switches
 //#define DEBUG_MAIN_LOOP
@@ -44,7 +42,7 @@
 
 
 // Port Definitions and Macros
-typedef struct{
+typedef struct{ // AVR Freaks: JohanEkdahl Aug 5 2008.
   unsigned int bit0:1;
   unsigned int bit1:1;
   unsigned int bit2:1;
@@ -88,39 +86,30 @@ typedef struct{
 #include <avr/eeprom.h>
 
 
-// Global Variables
+//* Global Variables
+// General and Timing
 static char dataBufferA[BUFFER_SIZE]; //volatile
-// static volatile uint16_t timer1min = 0; // Rolls at 18.2 Hours
 static volatile uint32_t timer1ms = 0; 
 static volatile uint32_t timer1us_p = 0;
 
-static uint16_t rfmWriteErrors;
-static uint8_t noiseFloor = 60; // Start with ~ -80 dBm, will work down from this
-
-
+// PPM & PWM 
 static volatile uint8_t ch;
 static volatile uint16_t pwmValues[CHANNELS] = {2000,2000,2000,2000,2000,2000,2000,2000}; // In uSec, 
 static volatile uint16_t pwmFrameSum; // Must be able to contain the accumulated sum of pwmValues[]
 static uint16_t pwmFailsafes[CHANNELS];
 
+// Radio
 const uint8_t dlFreqList[] = { 24,142,169,133,32,96,58,125,87,77,141,177,55,42,121,78,159,138,175,35,86,36};
 static volatile uint8_t dlChannel = 0;
 static volatile uint32_t timestampPacketRxd = 0;
 static volatile int16_t freqOffset = 180;
 static uint8_t rfmFIFO[64];
 
-// static struct{
-	// uint16_t ch1:10;
-	// uint16_t ch2:10;
-	// uint16_t ch3:10;
-	// uint16_t ch4:10;
-	// uint16_t ch5:10;
-	// uint16_t ch6:10;
-	// uint16_t ch7:10;
-	// uint16_t ch8:10;
-// } rcCommands;
-// static volatile uint16_t rcCommands[CHANNELS]; // Is volatile enough to guarantee not chopped bytes on PPM asserts?
+// Radio Statistics
+static uint16_t rfmWriteErrors;
+static uint8_t noiseFloor = 60; // Start with ~ -80 dBm, will work down from this
 
+// Application
 static struct{
 	int32_t lat:30;		// 536870912 > 089999999
 	int32_t lon:30;		// 536870912 > 179999999
@@ -130,6 +119,7 @@ static struct{
 	uint8_t hdop;		
 } gps;
 
+// System and State Machine
 static struct{
 	uint8_t sleepInterval:3;
 	uint8_t wdtSlpEn:1;
@@ -154,6 +144,14 @@ static struct{
 	uint16_t atMega;
 } volt;
 
+// typedef enum {DOWN=0, SLEEP=1, BEACON=2, ACTIVE=3, FAILSAFE=7} StateList;			
+const uint8_t wdtIntCfgList[] 	= {DISABLED,		ENABLED,		ENABLED,		ENABLED,		ENABLED		};
+const uint8_t wdtTimeCfgList[] 	= {0,				9,				8,				5,				5			};
+const uint8_t adcSaRateList[] 	= {SLOW,			SLOW,			FAST,			FAST,			FAST		};
+const uint8_t rfmModeList[] 	= {RX_TONE_LDC,		RX_TONE_LDC,	IDLE_TUNE,		RX_FHSS_LRS,	RX_FHSS_LRS	};
+const uint8_t sleepList[] 		= {9,				9,				0,				0,				0			};
+
+// Final Preprocessor Directives and Includes
 #include "i2c.c"
 #include "spi.c"
 
@@ -168,7 +166,7 @@ static struct{
 #include "elt.c"
 
 
-// Function Prototypes
+//* Function Prototypes
 void setup(void);
 void loop(void);
 void printState(void);
